@@ -1,0 +1,58 @@
+<!doctype html>
+<!--
+  Minimal host-application example: embeds the presentation editor in an iframe
+  and drives it over postMessage — the same shape of integration you'd use to
+  replace an OnlyOffice DocEditor. Open as /embed-test.html from the editor host.
+-->
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Host app — editor embed test</title>
+  <style>
+    body { font: 13px/1.4 "Segoe UI", Arial, sans-serif; margin: 0; display: flex; flex-direction: column; height: 100vh; }
+    header { padding: 8px 12px; background: #1f2937; color: #fff; display: flex; gap: 8px; align-items: center; }
+    header button { padding: 5px 12px; border: 0; border-radius: 4px; cursor: pointer; background: #B75B44; color: #fff; }
+    header .dirty { color: #FBBF24; font-weight: 600; }
+    iframe { flex: 1; border: 0; }
+    #log { height: 110px; overflow: auto; background: #0b1020; color: #9fe3a0; margin: 0; padding: 6px 10px; font: 11px/1.5 Consolas, monospace; }
+  </style>
+</head>
+<body>
+  <header>
+    <strong>My app</strong>
+    <button id="load">Load sample.pptx</button>
+    <button id="save">Save (get document back)</button>
+    <span id="state"></span>
+  </header>
+  <iframe id="editor" src="/?embed=1&parentOrigin=__ORIGIN__"></iframe>
+  <pre id="log"></pre>
+  <script>
+    const EDITOR_ORIGIN = location.origin; // same-origin test; use your editor host in production
+    const frame = document.getElementById("editor");
+    frame.src = "/?embed=1&parentOrigin=" + encodeURIComponent(location.origin);
+    const log = m => {
+      const el = document.getElementById("log");
+      el.textContent += "[" + new Date().toLocaleTimeString() + "] " + m + "\n";
+      el.scrollTop = el.scrollHeight;
+    };
+    const send = msg => frame.contentWindow.postMessage(msg, EDITOR_ORIGIN);
+
+    window.addEventListener("message", e => {
+      if (e.origin !== EDITOR_ORIGIN || e.data?.source !== "presentation-editor") return;
+      const d = e.data;
+      if (d.type === "pe:document") {
+        log(`pe:document received — ${d.fileName}, ${d.data.byteLength} bytes (host would upload this to R2/S3)`);
+        window.__lastDoc = d.data; // keep for inspection
+        return;
+      }
+      log(d.type + " " + JSON.stringify(Object.fromEntries(Object.entries(d).filter(([k]) => !["source", "type", "data"].includes(k)))));
+      if (d.type === "pe:dirty") document.getElementById("state").textContent = d.dirty ? "● unsaved changes" : "saved";
+      if (d.type === "pe:dirty") document.getElementById("state").className = d.dirty ? "dirty" : "";
+    });
+
+    document.getElementById("load").onclick = () =>
+      send({ type: "pe:load", url: location.origin + "/sample.pptx", title: "Sample Deck" });
+    document.getElementById("save").onclick = () => send({ type: "pe:save" });
+  </script>
+</body>
+</html>

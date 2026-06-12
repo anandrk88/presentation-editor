@@ -1,0 +1,26 @@
+{
+  "name": "presentation-editor",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build && node scripts/write-version.mjs",
+    "preview": "vite preview",
+    "smoke": "node scripts/smoke-pptx.mjs",
+    "release": "npm version patch && git push && git push --tags"
+  },
+  "dependencies": {
+    "jszip": "^3.10.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "@xmldom/xmldom": "^0.9.6",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11"
+  }
+}
