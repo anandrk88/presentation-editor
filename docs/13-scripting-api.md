@@ -126,10 +126,12 @@ What's selected right now. `ids` is empty when nothing is selected.
 One element by id, or all elements on the active slide. Returns `null` if the id
 isn't on the active slide.
 
-### `getConfig()` → `UIConfig`
+### `getConfig()` → `UIConfig` &nbsp;·&nbsp; `getPermissions()` → `{ export: boolean }`
 
-The resolved host UI configuration (which editor chrome is shown). Set via
-`config.js` / `?ui=` — see [INTEGRATION.md §4c](../INTEGRATION.md). Read-only here.
+`getConfig()` returns the resolved host UI configuration (which chrome is shown).
+`getPermissions()` returns the **enforced** permissions — e.g. `{ export }`. Both
+are set via `config.js` / URL and are read-only here. See
+[INTEGRATION.md §4c](../INTEGRATION.md).
 
 ### `ElementInfo`
 
@@ -261,6 +263,12 @@ renderer and jsPDF load on demand, so they never weigh down the main bundle).
 `opts.scale` (default `2`) is device-px per slide-px — raise it for print-grade
 output, lower it for smaller files. (A 13.3″ 16:9 slide is 1280×720 slide-px, so
 scale 2 → a 2560×1440 PNG.)
+
+> **Gated by host permission.** If the host set `permissions.export: false` (or an
+> `exportAuthUrl` that denied), these methods **reject** instead of returning a
+> Blob — `await api.exportPDF()` throws `"export disabled"` / `"export not
+> authorized"`, and over the bridge you get `pe:result { ok:false, error }`. See
+> [INTEGRATION.md §4c](../INTEGRATION.md).
 
 ```js
 // same-origin: download a PDF

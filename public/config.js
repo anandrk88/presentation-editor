@@ -33,4 +33,18 @@ window.presentationEditorConfig = {
       view: true,
     },
   },
+
+  // Authoritative permissions the EDITOR enforces (not just UI visibility).
+  // With export:false, the scripting API methods exportPDF / exportSlidePNG /
+  // exportPNGZip REJECT on every path — UI, keyboard, and pe:invoke from the
+  // console — instead of returning a file. (Override per-embed with ?perm=export:0.)
+  permissions: {
+    export: true,
+  },
+
+  // Optional: per-export server authorization. When set, the editor POSTs to this
+  // URL (credentials included) before each export and proceeds ONLY on a 2xx
+  // response — so your backend can approve/deny each export per user. Leave unset
+  // to skip. Set it here (server-served), not in the URL.
+  // exportAuthUrl: "https://your-app.example.com/api/authorize-export",
 };

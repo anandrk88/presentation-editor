@@ -321,7 +321,48 @@ read the resolved config at runtime via the scripting API: `getConfig()` (or
 > This hides UI only — it does not disable the underlying capability. A host that
 > hides `save` can still drive saving through the bridge (`pe:save`), and hiding
 > a tab doesn't remove the scripting API. Use it to tailor the surface, not as a
-> security boundary.
+> security boundary. For an **enforced** gate, use permissions (below).
+
+### Enforced permissions (e.g. gate export for free-tier users)
+
+UI flags only *hide*; the scripting API still works. To actually **block** a
+capability on every path — UI, keyboard, and `pe:invoke` from the console — use a
+`permissions` block. Today this covers **export**:
+
+```js
+// config.js
+window.presentationEditorConfig = {
+  permissions: { export: false },   // exportPDF / exportSlidePNG / exportPNGZip are refused
+};
+```
+
+With `export: false`, the export API methods **reject** instead of returning a
+file — `await api.exportPDF()` throws `"export disabled"`, and over the bridge
+`pe:invoke {method:"exportPDF"}` returns `pe:result { ok:false, error:"export disabled" }`.
+The export UI is hidden too. Override per-embed with `?perm=export:0`. Read the
+resolved state via `getPermissions()`.
+
+**Per-export server authorization (stronger).** Supply an endpoint and the editor
+asks your backend to approve **each** export — letting you decide per user, per
+document, in real time:
+
+```js
+window.presentationEditorConfig = {
+  exportAuthUrl: "https://your-app.example.com/api/authorize-export",
+};
+```
+
+Before every export the editor `POST`s to that URL **with credentials** and a JSON
+body `{ action:"export", format, title, slideCount }`, and proceeds **only on a
+2xx** response (otherwise: `"export not authorized"`). Your endpoint reads the
+user's session cookie and returns 200 to allow or 403 to deny. Set it in
+`config.js` (server-served), not the URL, so users can't repoint it.
+
+> Honest scope: this is still client-side — the editor holds the document bytes
+> in order to render and edit them, so it is not cryptographically unbreakable
+> (a determined user with devtools can tamper). What it does is make the API
+> **refuse**, which closes the practical bypass (the one-line console call) and
+> routes every real export through your server's decision.
 
 ---
 

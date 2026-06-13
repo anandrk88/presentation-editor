@@ -7,7 +7,8 @@ import {
 } from "../model/defaults";
 import { SHAPE_CATEGORIES, SHAPE_GALLERY, geomLabel, presetPath } from "../render/geometry";
 import { store } from "../state/store";
-import { uiConfig } from "../util/config";
+import { editorApi } from "../util/api";
+import { permissions, uiConfig } from "../util/config";
 import { editorBus, useEditorState } from "../state/useStore";
 import {
   customFontNames, deleteCustomFontPair, deleteCustomTheme,
@@ -1012,22 +1013,22 @@ function ChartIcon() {
   );
 }
 
-/** Render slides to PDF / PNG and download (export.tsx + jsPDF load on demand). */
+/**
+ * Download slides as PDF / PNG. Routes through the scripting API so the host
+ * export permission (and any exportAuthUrl hook) gates the UI the same as a
+ * programmatic call — one chokepoint for every path.
+ */
 async function runExport(kind: "pdf" | "png" | "pngzip", onClose: () => void) {
   onClose();
   try {
     store.setStatus("Exporting…");
-    const ex = await import("../util/export");
-    const pres = store.pres;
-    const base = (pres.title || "Presentation").replace(/[^\w.-]+/g, "_") || "Presentation";
-    if (kind === "pdf") {
-      ex.downloadBlob(await ex.exportPdfBlob(pres, store.media), `${base}.pdf`);
-    } else if (kind === "pngzip") {
-      ex.downloadBlob(await ex.exportPngZipBlob(pres, store.media), `${base}-slides.zip`);
-    } else {
-      const i = store.getState().selection.slideIndex;
-      ex.downloadBlob(await ex.slideToPngBlob(pres, pres.slides[i], store.media), `${base}-slide-${i + 1}.png`);
-    }
+    const base = (store.pres.title || "Presentation").replace(/[^\w.-]+/g, "_") || "Presentation";
+    let blob: Blob, name: string;
+    if (kind === "pdf") { blob = await editorApi.exportPDF(); name = `${base}.pdf`; }
+    else if (kind === "pngzip") { blob = await editorApi.exportPNGZip(); name = `${base}-slides.zip`; }
+    else { const i = store.getState().selection.slideIndex; blob = await editorApi.exportSlidePNG(i); name = `${base}-slide-${i + 1}.png`; }
+    const { downloadBlob } = await import("../util/export");
+    downloadBlob(blob, name);
     store.setStatus("Exported");
     setTimeout(() => store.setStatus(null), 2500);
   } catch (e) {
@@ -1046,7 +1047,7 @@ function FileMenu({ onClose, onOpenFile, onSave, onImportPattern }: { onClose: (
               <Icon name="save" size={18} /> Download as… <span className="file-hint">.pptx</span>
             </button>
           )}
-          {uiConfig.export && <>
+          {uiConfig.export && permissions.export && <>
             <button className="file-item" onClick={() => runExport("pdf", onClose)}>
               <Icon name="doc" size={18} /> Export as PDF <span className="file-hint">.pdf</span>
             </button>

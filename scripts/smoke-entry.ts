@@ -4,7 +4,7 @@ import { buildPptx } from "../src/ooxml/write";
 import { PARSE_LIMITS, parsePptx, setDOMParser, setXMLSerializer } from "../src/ooxml/parse";
 import { store } from "../src/state/store";
 import { editorApi } from "../src/util/api";
-import { parseUIConfig } from "../src/util/config";
+import { parsePermissions, parseUIConfig, permissions } from "../src/util/config";
 import { importPatternSlide } from "../src/ooxml/pattern";
 import { makeChart, makeShape, makeSlide, makeTable, makeTextBox, newPresentation } from "../src/model/defaults";
 import { PRESET_NAMES, presetPaths } from "../src/render/presetGeom";
@@ -975,6 +975,25 @@ export async function runSmoke(patternJson?: string): Promise<{ zipBytes: Uint8A
 
     const junk = parseUIConfig({ fileMenu: "maybe", bogus: true }, "?ui=nope:1,save:0");
     ok(junk.fileMenu === true && junk.save === false, "config: invalid values/keys are ignored");
+  }
+
+  // ---------- host-enforced export permission ----------
+  {
+    ok(parsePermissions(undefined, "").export === true, "permissions: export allowed by default");
+    ok(parsePermissions({ export: false }, "").export === false, "permissions: config file can deny export");
+    ok(parsePermissions(undefined, "?perm=export:0").export === false, "permissions: URL ?perm= denies export");
+    ok(parsePermissions({ export: false }, "?perm=export:1").export === true, "permissions: URL overrides the file");
+
+    // enforcement: the API export methods REJECT when disabled (gate runs before
+    // any rendering, so this is testable without a DOM)
+    permissions.export = false;
+    let pdfRej = false, pngRej = false, zipRej = false;
+    try { await editorApi.exportPDF(); } catch (e) { pdfRej = /export disabled/.test((e as Error).message); }
+    try { await editorApi.exportSlidePNG(0); } catch (e) { pngRej = /export disabled/.test((e as Error).message); }
+    try { await editorApi.exportPNGZip(); } catch (e) { zipRej = /export disabled/.test((e as Error).message); }
+    ok(pdfRej && pngRej && zipRej, "permissions: exportPDF/PNG/Zip all reject when export disabled");
+    ok(editorApi.getPermissions().export === false, "permissions: getPermissions reflects the gate");
+    permissions.export = true; // restore
   }
 
   return { zipBytes, report };

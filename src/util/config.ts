@@ -82,10 +82,62 @@ export function parseUIConfig(raw: unknown, search = ""): UIConfig {
   return out;
 }
 
-/** The resolved config, read once from the host config file + URL at startup. */
-export const uiConfig: UIConfig = parseUIConfig(
-  typeof window !== "undefined"
-    ? (window as unknown as { presentationEditorConfig?: { ui?: unknown } }).presentationEditorConfig?.ui
-    : undefined,
-  typeof location !== "undefined" ? location.search : "",
-);
+// ---------------------------------------------------------------------------
+// Permissions — authoritative gates the EDITOR enforces (not just UI visibility).
+// `export` controls whether exportPDF/exportSlidePNG/exportPNGZip are allowed at
+// all; when false the API methods reject on every path (UI, bridge, console).
+// ---------------------------------------------------------------------------
+
+export interface Permissions {
+  export: boolean;
+}
+
+const DEFAULT_PERMISSIONS: Permissions = { export: true };
+
+/** Pure: merge a raw permissions object + URL `?perm=` overrides over the defaults. */
+export function parsePermissions(raw: unknown, search = ""): Permissions {
+  const out: Permissions = { ...DEFAULT_PERMISSIONS };
+  const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const fileVal = asBool(r.export);
+  if (fileVal !== undefined) out.export = fileVal;
+
+  const perm = new URLSearchParams(search).get("perm");
+  if (perm) {
+    for (const part of perm.split(",")) {
+      const [k, v] = part.split(":");
+      const b = asBool(v?.trim());
+      if (b !== undefined && k?.trim() === "export") out.export = b;
+    }
+  }
+  return out;
+}
+
+/** Accept only http(s) URLs (for the optional export-authorization endpoint). */
+function httpsUrl(u: unknown): string | undefined {
+  if (typeof u !== "string") return undefined;
+  try { const abs = new URL(u).href; return /^https?:\/\//i.test(abs) ? abs : undefined; } catch { return undefined; }
+}
+
+type RawConfig = { ui?: unknown; permissions?: unknown; exportAuthUrl?: unknown };
+const rawConfig: RawConfig =
+  (typeof window !== "undefined"
+    ? (window as unknown as { presentationEditorConfig?: RawConfig }).presentationEditorConfig
+    : undefined) ?? {};
+const search = typeof location !== "undefined" ? location.search : "";
+
+/** Resolved UI visibility config, read once at startup. */
+export const uiConfig: UIConfig = parseUIConfig(rawConfig.ui, search);
+
+/**
+ * Resolved permissions, read once at startup into a module-scoped object the
+ * page console cannot reach — so a free-tier user can't flip it from devtools.
+ * (A reload re-reads config.js, the host's server-served source of truth.)
+ */
+export const permissions: Permissions = parsePermissions(rawConfig.permissions, search);
+
+/**
+ * Optional per-export server authorization endpoint. When set, the editor POSTs
+ * to it (with credentials) before each export and proceeds only on a 2xx. Set it
+ * in config.js (server-served) — not the URL — so users can't point it elsewhere.
+ */
+export const exportAuthUrl: string | undefined = httpsUrl(rawConfig.exportAuthUrl);

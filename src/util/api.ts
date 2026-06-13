@@ -27,7 +27,7 @@ import {
   resolveColor, resolveFontName,
 } from "../model/defaults";
 import { loadImageFromUrl } from "./loadImage";
-import { uiConfig, type UIConfig } from "./config";
+import { exportAuthUrl, permissions, uiConfig, type Permissions, type UIConfig } from "./config";
 import type { LayoutKind } from "../model/defaults";
 import type {
   BulletKind, ChartKind, ChartShape, ColorRef, Fill, PicShape, PresetGeom, Run, SchemeSlot,
@@ -299,6 +299,30 @@ function placeBox(o: InsertBox, dw: number, dh: number): { x: number; y: number;
   };
 }
 
+/**
+ * Host-enforced export gate — runs before any export produces bytes, on every
+ * path (UI, keyboard, and pe:invoke from the console). Throws when blocked; the
+ * bridge turns the throw into pe:result { ok:false, error }. The permission is
+ * read from a module-scoped value the page console can't reach.
+ */
+async function assertExportAllowed(format: "pdf" | "png" | "zip"): Promise<void> {
+  if (!permissions.export) throw new Error("export disabled");
+  if (exportAuthUrl) {
+    let res: Response;
+    try {
+      res = await fetch(exportAuthUrl, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "export", format, title: store.pres.title, slideCount: store.pres.slides.length }),
+      });
+    } catch {
+      throw new Error("export authorization request failed");
+    }
+    if (!res.ok) throw new Error("export not authorized");
+  }
+}
+
 // ----------------------------- the API ---------------------------------------
 
 export interface PresentationEditorApi {
@@ -318,6 +342,8 @@ export interface PresentationEditorApi {
   getElements(): ElementInfo[];
   /** The resolved host UI config (which editor chrome is shown). */
   getConfig(): UIConfig;
+  /** The resolved host permissions the editor enforces (e.g. `{ export }`). */
+  getPermissions(): Permissions;
 
   // —— write: element properties (active slide; undoable; marks the doc dirty) ——
   selectSlide(index: number): void;
@@ -417,6 +443,7 @@ function buildApi(): PresentationEditorApi {
     getElement(id) { const s = findOnActive(id); return s ? describeElement(s) : null; },
     getElements() { return activeShapes().map(describeElement); },
     getConfig() { return { ...uiConfig, tabs: { ...uiConfig.tabs } }; },
+    getPermissions() { return { ...permissions }; },
 
     selectSlide(index) { store.selectSlide(index); },
     selectElement(idOrIds) {
@@ -599,8 +626,9 @@ function buildApi(): PresentationEditorApi {
       return true;
     },
 
-    // —— export (export.tsx pulls in the renderer + jsPDF only when called) ——
+    // —— export (gated by permissions; export.tsx + jsPDF load only when allowed) ——
     async exportSlidePNG(index, opts) {
+      await assertExportAllowed("png");
       const i = index ?? store.getState().selection.slideIndex;
       const slide = store.pres.slides[i];
       if (!slide) throw new Error(`slide index ${i} out of range`);
@@ -608,10 +636,12 @@ function buildApi(): PresentationEditorApi {
       return slideToPngBlob(store.pres, slide, store.media, opts);
     },
     async exportPDF(opts) {
+      await assertExportAllowed("pdf");
       const { exportPdfBlob } = await import("./export");
       return exportPdfBlob(store.pres, store.media, opts);
     },
     async exportPNGZip(opts) {
+      await assertExportAllowed("zip");
       const { exportPngZipBlob } = await import("./export");
       return exportPngZipBlob(store.pres, store.media, opts);
     },
@@ -629,7 +659,7 @@ export const editorApi: PresentationEditorApi = buildApi();
 
 /** Method names the postMessage bridge is allowed to invoke (read + write). */
 export const API_METHODS = [
-  "getDocument", "getSlides", "getActiveSlide", "getSlide", "getSelection", "getElement", "getElements", "getConfig",
+  "getDocument", "getSlides", "getActiveSlide", "getSlide", "getSelection", "getElement", "getElements", "getConfig", "getPermissions",
   "selectSlide", "selectElement", "clearSelection",
   "setText", "setElementProperties", "setFillColor", "setImage", "deleteElement", "undo", "redo",
   "addSlide", "duplicateSlide", "deleteSlide", "moveSlide", "setDocumentTitle", "applyTheme", "setSlideBackgroundColor",
