@@ -284,6 +284,47 @@ signature, events, and recipes.
 
 ---
 
+## 4c. UI configuration — show/hide editor chrome
+
+Control which parts of the editor UI are visible by **editing a static config
+file** — no rebuild. The app ships `config.js` next to `index.html`; edit it on
+your server and reload.
+
+```js
+// config.js  (deployed alongside the app; edit in place)
+window.presentationEditorConfig = {
+  ui: {
+    fileMenu: false,     // hide the File tab + menu
+    present: false,      // hide the Present button
+    rightPanel: false,   // hide the format panel
+    // …omitted flags stay ON
+  },
+};
+```
+
+Every flag (all default **on**): `ribbon`, `fileMenu`, `save`, `open`,
+`export`, `importPattern`, `newPresentation`, `present`, `leftRail`,
+`slidePanel`, `rightPanel`, `statusBar`, `notesBar`, `docTitle`, and per-tab
+`tabs.{home,insert,design,transitions,view}`.
+
+**Per-embed override** — without touching the file, pass flags in the URL (handy
+when one host shows different chrome per context):
+
+```
+/?embed=1&parentOrigin=https://your-app&ui=fileMenu:0,present:0,tabs.insert:0
+```
+
+Resolution order (later wins): defaults → `config.js` → URL `?ui=`. The host can
+read the resolved config at runtime via the scripting API: `getConfig()` (or
+`pe:invoke` → `getConfig`). See [docs/13](docs/13-scripting-api.md).
+
+> This hides UI only — it does not disable the underlying capability. A host that
+> hides `save` can still drive saving through the bridge (`pe:save`), and hiding
+> a tab doesn't remove the scripting API. Use it to tailor the surface, not as a
+> security boundary.
+
+---
+
 ## 5. Migrating from a server-based document editor
 
 If you're replacing a server-based slide editor (one configured via a

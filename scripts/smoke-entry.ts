@@ -4,6 +4,7 @@ import { buildPptx } from "../src/ooxml/write";
 import { PARSE_LIMITS, parsePptx, setDOMParser, setXMLSerializer } from "../src/ooxml/parse";
 import { store } from "../src/state/store";
 import { editorApi } from "../src/util/api";
+import { parseUIConfig } from "../src/util/config";
 import { importPatternSlide } from "../src/ooxml/pattern";
 import { makeChart, makeShape, makeSlide, makeTable, makeTextBox, newPresentation } from "../src/model/defaults";
 import { PRESET_NAMES, presetPaths } from "../src/render/presetGeom";
@@ -953,6 +954,27 @@ export async function runSmoke(patternJson?: string): Promise<{ zipBytes: Uint8A
     ok(editorApi.getDocument().slideCount === cnt + 1, "api: duplicateSlide");
     editorApi.deleteSlide();
     ok(editorApi.getDocument().slideCount === cnt, "api: deleteSlide");
+  }
+
+  // ---------- host UI config (feature flags) ----------
+  {
+    const def = parseUIConfig(undefined, "");
+    ok(def.fileMenu === true && def.present === true && def.tabs.insert === true, "config: defaults are all-on");
+
+    const fromFile = parseUIConfig({ ui: { fileMenu: false } }.ui, "");
+    ok(fromFile.fileMenu === false && fromFile.save === true, "config: file object hides one flag, leaves others");
+
+    const nested = parseUIConfig({ tabs: { insert: false }, present: false }, "");
+    ok(nested.present === false && nested.tabs.insert === false && nested.tabs.home === true, "config: nested tabs + top flags");
+
+    const url = parseUIConfig(undefined, "?ui=fileMenu:0,tabs.view:0");
+    ok(url.fileMenu === false && url.tabs.view === false && url.tabs.home === true, "config: URL ?ui= override");
+
+    const prec = parseUIConfig({ fileMenu: true }, "?ui=fileMenu:0");
+    ok(prec.fileMenu === false, "config: URL overrides the file object");
+
+    const junk = parseUIConfig({ fileMenu: "maybe", bogus: true }, "?ui=nope:1,save:0");
+    ok(junk.fileMenu === true && junk.save === false, "config: invalid values/keys are ignored");
   }
 
   return { zipBytes, report };

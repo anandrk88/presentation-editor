@@ -27,6 +27,7 @@ import {
   resolveColor, resolveFontName,
 } from "../model/defaults";
 import { loadImageFromUrl } from "./loadImage";
+import { uiConfig, type UIConfig } from "./config";
 import type { LayoutKind } from "../model/defaults";
 import type {
   BulletKind, ChartKind, ChartShape, ColorRef, Fill, PicShape, PresetGeom, Run, SchemeSlot,
@@ -315,6 +316,8 @@ export interface PresentationEditorApi {
   getSelection(): SelectionInfo;
   getElement(id: string): ElementInfo | null;
   getElements(): ElementInfo[];
+  /** The resolved host UI config (which editor chrome is shown). */
+  getConfig(): UIConfig;
 
   // —— write: element properties (active slide; undoable; marks the doc dirty) ——
   selectSlide(index: number): void;
@@ -413,6 +416,7 @@ function buildApi(): PresentationEditorApi {
     },
     getElement(id) { const s = findOnActive(id); return s ? describeElement(s) : null; },
     getElements() { return activeShapes().map(describeElement); },
+    getConfig() { return { ...uiConfig, tabs: { ...uiConfig.tabs } }; },
 
     selectSlide(index) { store.selectSlide(index); },
     selectElement(idOrIds) {
@@ -625,7 +629,7 @@ export const editorApi: PresentationEditorApi = buildApi();
 
 /** Method names the postMessage bridge is allowed to invoke (read + write). */
 export const API_METHODS = [
-  "getDocument", "getSlides", "getActiveSlide", "getSlide", "getSelection", "getElement", "getElements",
+  "getDocument", "getSlides", "getActiveSlide", "getSlide", "getSelection", "getElement", "getElements", "getConfig",
   "selectSlide", "selectElement", "clearSelection",
   "setText", "setElementProperties", "setFillColor", "setImage", "deleteElement", "undo", "redo",
   "addSlide", "duplicateSlide", "deleteSlide", "moveSlide", "setDocumentTitle", "applyTheme", "setSlideBackgroundColor",

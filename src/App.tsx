@@ -18,6 +18,7 @@ import { store } from "./state/store";
 import { useEditorState } from "./state/useStore";
 import { saveSnapshot } from "./util/autosave";
 import { initCustomFonts } from "./util/custom";
+import { uiConfig } from "./util/config";
 import { embedConfig, initEmbedBridge, notifyHost, uploadTo } from "./util/embed";
 import { loadImageFile } from "./util/loadImage";
 
@@ -253,24 +254,26 @@ export default function App() {
 
   return (
     <div className="app">
-      <Ribbon onOpenFile={onOpenFile} onSave={onSave} onPresent={present} onImportPattern={() => setPatternOpen(true)} />
+      {uiConfig.ribbon && <Ribbon onOpenFile={onOpenFile} onSave={onSave} onPresent={present} onImportPattern={() => setPatternOpen(true)} />}
       <div className="main-row">
-        <div className="left-rail">
-          <button className={`rail-btn ${findOpen ? "active" : ""}`} title="Find and replace (Ctrl+F)" onClick={() => setFindOpen(v => !v)}><SearchIcon /></button>
-          <button className={`rail-btn ${showThumbs ? "active" : ""}`} title="Slide thumbnails" onClick={() => setShowThumbs(v => !v)}>
-            <Icon name="addSlide" size={18} />
-          </button>
-          <div className="rail-spacer" />
-          <button className="rail-btn" title="About" onClick={() => store.setStatus(`Presentation Editor v${typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "dev"}`)}><InfoIcon /></button>
-        </div>
-        {showThumbs && <SlidePanel onPresentFrom={i => { store.setState({ presenting: true, presentIndex: i }); }} />}
+        {uiConfig.leftRail && (
+          <div className="left-rail">
+            <button className={`rail-btn ${findOpen ? "active" : ""}`} title="Find and replace (Ctrl+F)" onClick={() => setFindOpen(v => !v)}><SearchIcon /></button>
+            <button className={`rail-btn ${showThumbs ? "active" : ""}`} title="Slide thumbnails" onClick={() => setShowThumbs(v => !v)}>
+              <Icon name="addSlide" size={18} />
+            </button>
+            <div className="rail-spacer" />
+            <button className="rail-btn" title="About" onClick={() => store.setStatus(`Presentation Editor v${typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "dev"}`)}><InfoIcon /></button>
+          </div>
+        )}
+        {uiConfig.slidePanel && showThumbs && <SlidePanel onPresentFrom={i => { store.setState({ presenting: true, presentIndex: i }); }} />}
         <div className="center-col">
           <EditorCanvas />
-          <NotesBar />
+          {uiConfig.notesBar && <NotesBar />}
         </div>
-        <RightPanel />
+        {uiConfig.rightPanel && <RightPanel />}
       </div>
-      <StatusBar onPresent={() => present(false)} />
+      {uiConfig.statusBar && <StatusBar onPresent={() => present(false)} />}
       {state.presenting && <PresentMode />}
       {patternOpen && <PatternDialog onClose={() => setPatternOpen(false)} />}
       {findOpen && <FindDialog onClose={() => setFindOpen(false)} />}

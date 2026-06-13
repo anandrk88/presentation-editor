@@ -126,6 +126,11 @@ What's selected right now. `ids` is empty when nothing is selected.
 One element by id, or all elements on the active slide. Returns `null` if the id
 isn't on the active slide.
 
+### `getConfig()` → `UIConfig`
+
+The resolved host UI configuration (which editor chrome is shown). Set via
+`config.js` / `?ui=` — see [INTEGRATION.md §4c](../INTEGRATION.md). Read-only here.
+
 ### `ElementInfo`
 
 The stable projection of one element. Type-specific blocks appear only for the

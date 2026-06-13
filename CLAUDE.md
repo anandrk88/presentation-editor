@@ -70,13 +70,14 @@ src/
     embed.ts            host-app integration (URL config + postMessage bridge, incl. pe:invoke)
     api.ts              public scripting API (window.presentationEditor): read/mutate/insert slides, elements, text, images, fills; export
     export.tsx          slide → PNG / multi-page PDF / PNG-zip (offscreen render → canvas, lazy jsPDF)
+    config.ts           host UI config (window.presentationEditorConfig + ?ui= → which editor chrome shows)
     autosave.ts         IndexedDB snapshot save/restore
     custom.ts           user palettes + font pairs (localStorage), Google-font loading
     loadImage.ts        image ingest (file / URL), SVG normalize + PNG fallback
     svgTint.ts          SVG recolor for "graphics fill"
   fonts/bundled.ts      generated list of self-hosted font families
 scripts/                smoke suite, font installer, preset generator, version stamper
-public/                 embed-test.html, sample.pptx, fonts/, patterns/
+public/                 config.js (host UI config), embed-test.html, sample.pptx, fonts/, patterns/
 ```
 
 ---

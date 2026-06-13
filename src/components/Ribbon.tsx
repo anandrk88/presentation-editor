@@ -7,6 +7,7 @@ import {
 } from "../model/defaults";
 import { SHAPE_CATEGORIES, SHAPE_GALLERY, geomLabel, presetPath } from "../render/geometry";
 import { store } from "../state/store";
+import { uiConfig } from "../util/config";
 import { editorBus, useEditorState } from "../state/useStore";
 import {
   customFontNames, deleteCustomFontPair, deleteCustomTheme,
@@ -43,7 +44,9 @@ export function Ribbon({ onOpenFile, onSave, onPresent, onImportPattern }: {
   onImportPattern: () => void;
 }) {
   const state = useEditorState();
-  const [tab, setTab] = useState<TabId>("home");
+  // default to the first ribbon tab the host left enabled
+  const firstTab = (["home", "insert", "design", "transitions", "view"] as const).find(t => uiConfig.tabs[t]) ?? "home";
+  const [tab, setTab] = useState<TabId>(firstTab);
   const [fileOpen, setFileOpen] = useState(false);
   const { pres, selection, editingShapeId } = state;
   const theme = pres.theme;
@@ -223,7 +226,7 @@ export function Ribbon({ onOpenFile, onSave, onPresent, onImportPattern }: {
   const StaticCluster = (
     <>
       <div className="tb-group tb-grid3">
-        <button className="tb-btn sm" title="Save as .pptx (Ctrl+S)" onClick={onSave}><Icon name="save" size={16} /></button>
+        {uiConfig.save && <button className="tb-btn sm" title="Save as .pptx (Ctrl+S)" onClick={onSave}><Icon name="save" size={16} /></button>}
         <button className="tb-btn sm" title="Copy (Ctrl+C)" disabled={!hasSel} onClick={() => store.copySelection()}><Icon name="duplicate" size={16} /></button>
         <button className="tb-btn sm" title="Paste (Ctrl+V)" onClick={() => store.pasteClipboard()}><Icon name="doc" size={16} /></button>
         <button className="tb-btn sm" title="Undo (Ctrl+Z)" disabled={!state.canUndo} onClick={store.undo}><Icon name="undo" size={16} /></button>
@@ -669,7 +672,7 @@ export function Ribbon({ onOpenFile, onSave, onPresent, onImportPattern }: {
     <div className="ribbon">
       <div className="header-bar">
         <div className="tab-strip">
-          {TABS.map(t => (
+          {TABS.filter(t => (t.id === "file" ? uiConfig.fileMenu : uiConfig.tabs[t.id as keyof typeof uiConfig.tabs])).map(t => (
             <button
               key={t.id}
               className={`tab ${tab === t.id && t.id !== "file" ? "active" : ""}`}
@@ -680,22 +683,26 @@ export function Ribbon({ onOpenFile, onSave, onPresent, onImportPattern }: {
           ))}
         </div>
         <div className="tab-spacer" />
-        <input
-          className="doc-title"
-          value={pres.title}
-          onChange={e => store.setState({ pres: { ...pres, title: e.target.value } })}
-          spellCheck={false}
-        />
-        <button className="present-btn" title="Start slideshow (F5)" onClick={() => onPresent(true)}>
-          <Icon name="present" size={12} /> Present
-        </button>
+        {uiConfig.docTitle && (
+          <input
+            className="doc-title"
+            value={pres.title}
+            onChange={e => store.setState({ pres: { ...pres, title: e.target.value } })}
+            spellCheck={false}
+          />
+        )}
+        {uiConfig.present && (
+          <button className="present-btn" title="Start slideshow (F5)" onClick={() => onPresent(true)}>
+            <Icon name="present" size={12} /> Present
+          </button>
+        )}
       </div>
       <div className="toolbar">
-        {tab === "home" && HomePanel}
-        {tab === "insert" && InsertPanel}
-        {tab === "design" && DesignPanel}
-        {tab === "transitions" && TransitionsPanel}
-        {tab === "view" && ViewPanel}
+        {uiConfig.tabs.home && tab === "home" && HomePanel}
+        {uiConfig.tabs.insert && tab === "insert" && InsertPanel}
+        {uiConfig.tabs.design && tab === "design" && DesignPanel}
+        {uiConfig.tabs.transitions && tab === "transitions" && TransitionsPanel}
+        {uiConfig.tabs.view && tab === "view" && ViewPanel}
       </div>
       {fileOpen && <FileMenu onClose={() => setFileOpen(false)} onOpenFile={onOpenFile} onSave={onSave} onImportPattern={onImportPattern} />}
       {colorsDlg && (
@@ -1034,35 +1041,45 @@ function FileMenu({ onClose, onOpenFile, onSave, onImportPattern }: { onClose: (
       <div className="file-menu" onClick={e => e.stopPropagation()}>
         <button className="file-close" onClick={onClose}>‹ &nbsp;Close Menu</button>
         <div className="file-items">
-          <button className="file-item" onClick={() => { onSave(); onClose(); }}>
-            <Icon name="save" size={18} /> Download as… <span className="file-hint">.pptx</span>
-          </button>
-          <button className="file-item" onClick={() => runExport("pdf", onClose)}>
-            <Icon name="doc" size={18} /> Export as PDF <span className="file-hint">.pdf</span>
-          </button>
-          <button className="file-item" onClick={() => runExport("png", onClose)}>
-            <Icon name="image" size={18} /> Export current slide <span className="file-hint">.png</span>
-          </button>
-          <button className="file-item" onClick={() => runExport("pngzip", onClose)}>
-            <Icon name="image" size={18} /> Export all slides <span className="file-hint">.png .zip</span>
-          </button>
+          {uiConfig.save && (
+            <button className="file-item" onClick={() => { onSave(); onClose(); }}>
+              <Icon name="save" size={18} /> Download as… <span className="file-hint">.pptx</span>
+            </button>
+          )}
+          {uiConfig.export && <>
+            <button className="file-item" onClick={() => runExport("pdf", onClose)}>
+              <Icon name="doc" size={18} /> Export as PDF <span className="file-hint">.pdf</span>
+            </button>
+            <button className="file-item" onClick={() => runExport("png", onClose)}>
+              <Icon name="image" size={18} /> Export current slide <span className="file-hint">.png</span>
+            </button>
+            <button className="file-item" onClick={() => runExport("pngzip", onClose)}>
+              <Icon name="image" size={18} /> Export all slides <span className="file-hint">.png .zip</span>
+            </button>
+          </>}
           <div className="file-div" />
-          <button className="file-item" onClick={() => { onOpenFile(); onClose(); }}>
-            <Icon name="open" size={18} /> Open… <span className="file-hint">.pptx</span>
-          </button>
-          <button className="file-item" onClick={() => { onImportPattern(); onClose(); }}>
-            <Icon name="doc" size={18} /> Import Pattern… <span className="file-hint">JSON</span>
-          </button>
-          <button
-            className="file-item"
-            onClick={() => {
-              if (store.getState().dirty && !confirm("Discard current presentation and create a new one?")) return;
-              store.newPresentation();
-              onClose();
-            }}
-          >
-            <Icon name="doc" size={18} /> Create New
-          </button>
+          {uiConfig.open && (
+            <button className="file-item" onClick={() => { onOpenFile(); onClose(); }}>
+              <Icon name="open" size={18} /> Open… <span className="file-hint">.pptx</span>
+            </button>
+          )}
+          {uiConfig.importPattern && (
+            <button className="file-item" onClick={() => { onImportPattern(); onClose(); }}>
+              <Icon name="doc" size={18} /> Import Pattern… <span className="file-hint">JSON</span>
+            </button>
+          )}
+          {uiConfig.newPresentation && (
+            <button
+              className="file-item"
+              onClick={() => {
+                if (store.getState().dirty && !confirm("Discard current presentation and create a new one?")) return;
+                store.newPresentation();
+                onClose();
+              }}
+            >
+              <Icon name="doc" size={18} /> Create New
+            </button>
+          )}
           <div className="file-div" />
           <div className="file-about">
             <b>Presentation Editor</b>
