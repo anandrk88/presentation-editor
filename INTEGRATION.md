@@ -172,6 +172,7 @@ Send with `editor.contentWindow.postMessage(msg, EDITOR_ORIGIN)`.
 |---|---|---|
 | `pe:load` | `{ url: string, title?: string }` **or** `{ data: ArrayBuffer, title?: string }` | Open a presentation (by URL fetch or raw bytes). |
 | `pe:save` | — | Export now. Editor replies with `pe:document` (and also PUTs to `saveUrl` if one was set). |
+| `pe:invoke` | `{ requestId, method, args: [...] }` | Call a scripting-API method (read or change the document). Editor replies `pe:result { requestId, ok, value }`. See [§4b](#4b-scripting-api--read--change-the-document) and [docs/13](docs/13-scripting-api.md). |
 
 ### Events the EDITOR sends to the host
 All carry `source: "presentation-editor"` — filter on it. All are posted only
@@ -184,6 +185,9 @@ to `parentOrigin`.
 | `pe:dirty` | `{ dirty: boolean }` | Unsaved-changes flag changed — drive your "unsaved" indicator. |
 | `pe:document` | `{ data: ArrayBuffer, fileName }` | Reply to `pe:save` / Save in embed mode. `data` is the complete `.pptx` (transferable). |
 | `pe:saved` | `{ via: "upload" \| "message" }` | Save completed (uploaded to `saveUrl`, or delivered via `pe:document`). |
+| `pe:selection` | `{ selection }` | The selection (or active slide) changed — for syncing a host-side properties panel. |
+| `pe:slide` | `{ slide }` | The active slide changed. |
+| `pe:result` | `{ requestId, ok, value }` \| `{ requestId, ok: false, error }` | Reply to a `pe:invoke` call. |
 | `pe:error` | `{ message }` | Load/save failure. |
 
 ### Complete host-side example
@@ -220,6 +224,58 @@ function saveDeck() {
 
 > Note: in dev builds (React StrictMode) some events can fire twice. Make
 > handlers idempotent. Production builds fire once.
+
+---
+
+## 4b. Scripting API — read & change the document
+
+Beyond load/save, the editor exposes a **programmatic surface** to inspect
+what's on screen and change it from code — the active slide, the current
+selection, and every element's properties (text, image, fill, geometry, table,
+chart), plus mutations (set text, swap an image, recolor, move/resize, select,
+delete, undo/redo). Build a properties panel, a "replace logo" button, bulk
+recolor, an AI "rewrite this slide" action, etc.
+
+**Full reference: [docs/13 · Scripting API](docs/13-scripting-api.md).** The short version:
+
+**Same-origin** — call the global directly (synchronous, typed):
+```js
+const api = document.getElementById("editor").contentWindow.presentationEditor;
+const sel = api.getSelection();
+console.log(sel.elements[0]);        // { kind, text, image, fill, x, y, w, h, px, … }
+api.setText(sel.ids[0], "New title");
+api.on("selection", s => panel.render(s.elements[0]));   // live-sync your UI
+```
+
+**Cross-origin** — call any method by name over `pe:invoke`:
+```js
+function call(method, ...args) {
+  const requestId = crypto.randomUUID();
+  return new Promise((resolve, reject) => {
+    function onMsg(e) {
+      const d = e.data;
+      if (e.origin !== EDITOR_ORIGIN || d?.source !== "presentation-editor"
+          || d.type !== "pe:result" || d.requestId !== requestId) return;
+      window.removeEventListener("message", onMsg);
+      d.ok ? resolve(d.value) : reject(new Error(d.error));
+    }
+    window.addEventListener("message", onMsg);
+    editor.contentWindow.postMessage({ type: "pe:invoke", requestId, method, args }, EDITOR_ORIGIN);
+  });
+}
+
+const active = await call("getActiveSlide");          // active slide + its elements
+await call("setImage", logoId, "https://cdn.example.com/logo.png");
+```
+
+Methods (read): `getDocument`, `getSlides`, `getActiveSlide`, `getSlide`,
+`getSelection`, `getElement`, `getElements`. Methods (write, undoable, mark
+dirty): `selectSlide`, `selectElement`, `clearSelection`, `setText`,
+`setElementProperties`, `setFillColor`, `setImage`, `deleteElement`, `undo`,
+`redo`. Geometry is in EMU with a `px` companion. Writes target the **active
+slide** — `selectSlide(i)` first to edit another. See
+[docs/13](docs/13-scripting-api.md) for the data shapes, every signature, events,
+and recipes.
 
 ---
 

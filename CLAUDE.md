@@ -39,6 +39,7 @@ Open `http://localhost:5173/embed-test.html` for the iframe-embed demo.
 | 10 | [Build & release](docs/10-build-release.md) | Versioning, CI, deploy targets, the font-install pipeline, how updates reach the server. |
 | 11 | [Testing & verification](docs/11-testing.md) | The smoke round-trip suite and the live-browser verification methodology. |
 | 12 | [Code quality assessment](docs/12-code-quality.md) | An honest review: how the code is structured, what's strong, what's tech debt, and a grade. |
+| 13 | [Scripting API](docs/13-scripting-api.md) | Programmatic read/write surface: `window.presentationEditor` (+ cross-origin `pe:invoke`) to inspect the active slide / selection / element properties and mutate text, images, fills, geometry. |
 
 ---
 
@@ -66,7 +67,8 @@ src/
     useStore.ts         React binding via useSyncExternalStore
   components/           ribbon, canvas, panels, dialogs (the UI layer)
   util/
-    embed.ts            host-app integration (URL config + postMessage bridge)
+    embed.ts            host-app integration (URL config + postMessage bridge, incl. pe:invoke)
+    api.ts              public scripting API (window.presentationEditor): read/mutate slides, elements, text, images, fills
     autosave.ts         IndexedDB snapshot save/restore
     custom.ts           user palettes + font pairs (localStorage), Google-font loading
     loadImage.ts        image ingest (file / URL), SVG normalize + PNG fallback

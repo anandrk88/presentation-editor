@@ -25,7 +25,17 @@ editor.contentWindow.postMessage({ type: "pe:save" }, EDITOR_ORIGIN);
 ```
 Events back to the host (all tagged `source:"presentation-editor"`):
 `pe:ready` (with `version`), `pe:loaded {title, slideCount}`, `pe:dirty {dirty}`,
-`pe:document {data: ArrayBuffer, fileName}`, `pe:saved {via}`, `pe:error {message}`.
+`pe:document {data: ArrayBuffer, fileName}`, `pe:saved {via}`,
+`pe:selection {selection}`, `pe:slide {slide}`, `pe:error {message}`.
+
+### 3. Scripting API (read & change the document)
+Inspect and mutate the document from code — active slide, selection, and each
+element's text/image/fill/geometry, plus `setText`/`setImage`/`setFillColor`/
+`setElementProperties`/`select`/`delete`/`undo`. Same-origin hosts call
+`window.presentationEditor` directly; cross-origin hosts call any method by name
+over `pe:invoke {requestId, method, args}` → `pe:result {requestId, ok, value}`.
+**Full reference: [13 · Scripting API](13-scripting-api.md)** (source:
+[`src/util/api.ts`](../src/util/api.ts)).
 
 ## Security of the bridge
 With the bridge enabled, the editor accepts messages **only** from `parentOrigin`

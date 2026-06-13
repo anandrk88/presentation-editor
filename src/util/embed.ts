@@ -16,12 +16,22 @@
  *       pe:dirty   { dirty }           — unsaved-changes indicator
  *       pe:document{ data: ArrayBuffer, fileName } — reply to pe:save (transferable)
  *       pe:saved   { via: "upload" | "message" }
+ *       pe:selection { selection }     — selection changed (active slide's elements)
+ *       pe:slide   { slide }           — active slide changed
  *       pe:error   { message }
+ *
+ *  Scripting (read/write the document) — call any public API method by name:
+ *       host → editor:  pe:invoke { requestId, method, args: [...] }
+ *       editor → host:  pe:result { requestId, ok, value }  |  { requestId, ok: false, error }
+ *     The callable methods are API_METHODS (see api.ts: getActiveSlide,
+ *     getSelection, getElement, setText, setImage, setFillColor, …). Same-origin
+ *     hosts can skip postMessage and call window.presentationEditor directly.
  *
  * Security: inbound commands are accepted ONLY from parentOrigin, and all
  * outbound messages target parentOrigin explicitly. Without parentOrigin the
  * bridge stays disabled even if embed=1.
  */
+import { API_METHODS, editorApi } from "./api";
 
 export interface EmbedConfig {
   fileUrl?: string;
@@ -63,6 +73,13 @@ export interface BridgeHandlers {
   exportPptx: () => Promise<Blob>;
   /** Current document title (for the export file name). */
   title: () => string;
+  /**
+   * Clear the dirty flag after a successful save. The pe:dirty event is
+   * edge-triggered (emitted only on a clean<->dirty transition), so a pe:save
+   * that left the doc dirty would suppress every future pe:dirty{true} and the
+   * host's autosave would never re-fire. Mirrors the Save button.
+   */
+  markSaved: () => void;
 }
 
 let post: ((msg: Record<string, unknown>, transfer?: Transferable[]) => void) | null = null;
@@ -113,6 +130,25 @@ export function initEmbedBridge(cfg: EmbedConfig, handlers: BridgeHandlers) {
           } else {
             post?.({ type: "pe:saved", via: "message" });
           }
+          // success → clear dirty so the next edit re-emits pe:dirty{true}
+          handlers.markSaved();
+          break;
+        }
+        case "pe:invoke": {
+          // call a public API method by name and reply with its result (keyed by requestId)
+          const { requestId, method, args } = e.data as { requestId?: unknown; method?: unknown; args?: unknown };
+          if (typeof method !== "string" || !(API_METHODS as readonly string[]).includes(method)) {
+            post?.({ type: "pe:result", requestId, ok: false, error: `Unknown API method: ${String(method)}` });
+            break;
+          }
+          try {
+            const fn = (editorApi as unknown as Record<string, (...a: unknown[]) => unknown>)[method];
+            const argv = Array.isArray(args) ? args : args === undefined ? [] : [args];
+            const value = await Promise.resolve(fn(...argv));
+            post?.({ type: "pe:result", requestId, ok: true, value });
+          } catch (err) {
+            post?.({ type: "pe:result", requestId, ok: false, error: (err as Error).message });
+          }
           break;
         }
       }
@@ -120,6 +156,10 @@ export function initEmbedBridge(cfg: EmbedConfig, handlers: BridgeHandlers) {
       post?.({ type: "pe:error", message: (err as Error).message });
     }
   });
+
+  // forward selection / active-slide changes to the host (dirty is sent by App)
+  editorApi.on("selection", selection => post?.({ type: "pe:selection", selection }));
+  editorApi.on("slide", slide => post?.({ type: "pe:slide", slide }));
 
   post({ type: "pe:ready", version: typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "dev" });
 }

@@ -122,6 +122,7 @@ export default function App() {
       load: async (buf, title) => { await openBuffer(buf, title); },
       exportPptx: () => exportPptxBlob(store.pres, store.media),
       title: () => store.pres.title,
+      markSaved: () => store.setState({ dirty: false }),
     });
     if (EMBED.fileUrl) {
       (async () => {

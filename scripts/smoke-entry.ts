@@ -3,6 +3,7 @@ import { DOMParser as XmldomParser, XMLSerializer as XmldomSerializer } from "@x
 import { buildPptx } from "../src/ooxml/write";
 import { PARSE_LIMITS, parsePptx, setDOMParser, setXMLSerializer } from "../src/ooxml/parse";
 import { store } from "../src/state/store";
+import { editorApi } from "../src/util/api";
 import { importPatternSlide } from "../src/ooxml/pattern";
 import { makeChart, makeShape, makeSlide, makeTable, makeTextBox, newPresentation } from "../src/model/defaults";
 import { PRESET_NAMES, presetPaths } from "../src/render/presetGeom";
@@ -870,6 +871,49 @@ export async function runSmoke(patternJson?: string): Promise<{ zipBytes: Uint8A
     } catch (e) { sizeRejected = /too large/i.test((e as Error).message); }
     PARSE_LIMITS.maxCompressedBytes = savedComp;
     ok(sizeRejected, "security: oversized input is rejected before parsing");
+  }
+
+  // ---------- public scripting API (read + mutate via window.presentationEditor) ----------
+  {
+    const apiPres = newPresentation();
+    apiPres.title = "API Deck";
+    const sl = makeSlide("blank");
+    const tb = makeTextBox(914400, 914400, 3000000, 1000000, "Hello world");
+    const pic = { kind: "pic", id: "pic_api", name: "Logo", x: 4000000, y: 914400, w: 1000000, h: 1000000, rot: 0, mediaId: "m_api" } as const;
+    const tbl = makeTable(2, 3, 914400, 3000000, 4000000, 1500000);
+    sl.shapes = [tb, pic, tbl];
+    apiPres.slides = [sl];
+    const media = new Map<string, MediaItem>([["m_api", { id: "m_api", mime: "image/png", dataUrl: "data:image/png;base64,iVBORw0KGgo=", bytes: PNG_BYTES }]]);
+    store.loadPresentation(apiPres, media);
+
+    // —— reads ——
+    const doc = editorApi.getDocument();
+    ok(doc.slideCount === 1 && doc.title === "API Deck", "api: getDocument basics");
+    ok(typeof doc.palette.accent1 === "string" && doc.palette.accent1.startsWith("#"), "api: palette exposes theme colors");
+    const active = editorApi.getActiveSlide();
+    ok(active.elements?.length === 3, "api: active slide lists all elements", String(active.elements?.length));
+    const txtEl = active.elements!.find(e => e.kind === "shape" && e.text);
+    ok(txtEl?.text === "Hello world", "api: text element exposes plain text", txtEl?.text);
+    ok(txtEl!.px.w === Math.round(3000000 / 9525), "api: geometry reported in px too", String(txtEl?.px.w));
+    const imgEl = active.elements!.find(e => e.kind === "image");
+    ok(imgEl?.image?.mediaId === "m_api" && imgEl?.image?.mime === "image/png", "api: image element exposes media + dataUrl");
+    const tblEl = active.elements!.find(e => e.kind === "table");
+    ok(tblEl?.table?.rows === 2 && tblEl?.table?.cols === 3, "api: table element exposes grid size");
+
+    // —— writes (undoable, mark dirty) ——
+    ok(editorApi.setText(txtEl!.id, "Changed text") === true, "api: setText returns true");
+    ok(editorApi.getElement(txtEl!.id)?.text === "Changed text", "api: setText updates the model");
+    ok(editorApi.setFillColor(txtEl!.id, "#FF0000") === true, "api: setFillColor returns true");
+    ok((editorApi.getElement(txtEl!.id)?.fill as { color?: string }).color?.toUpperCase() === "#FF0000", "api: setFillColor applied (resolved hex)");
+    editorApi.setElementProperties(txtEl!.id, { x: 100000, w: 2000000 });
+    const moved = editorApi.getElement(txtEl!.id)!;
+    ok(moved.x === 100000 && moved.w === 2000000, "api: setElementProperties moves/resizes");
+    ok(editorApi.getDocument().dirty === true, "api: mutations mark the document dirty");
+    editorApi.selectElement(imgEl!.id);
+    ok(editorApi.getSelection().ids.join() === imgEl!.id, "api: selectElement reflects in getSelection");
+    ok(editorApi.deleteElement(imgEl!.id) === true, "api: deleteElement returns true");
+    ok(editorApi.getElement(imgEl!.id) === null && editorApi.getActiveSlide().elements?.length === 2, "api: deleted element is gone");
+    ok(editorApi.setFillColor("does-not-exist", "#000000") === false, "api: mutating a missing id returns false");
   }
 
   return { zipBytes, report };
