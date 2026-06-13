@@ -3,7 +3,7 @@ import rawDefs from "./presetDefs.json";
 /**
  * ECMA-376 preset geometry evaluator. Each preset is a list of adjust values
  * (avLst), guide formulas (gdLst) and path commands whose arguments reference
- * guides — the same tables PowerPoint and OnlyOffice evaluate. Evaluating them
+ * guides — the same tables PowerPoint evaluates. Evaluating them
  * at the shape's current size yields correct outlines for all 187 presets at
  * any aspect ratio, honoring per-shape adjust values from imported files.
  */

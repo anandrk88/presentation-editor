@@ -3,7 +3,7 @@ import type { ChartKind, ChartShape } from "../model/types";
 import { CHART_NAMES } from "../model/defaults";
 import { store } from "../state/store";
 
-/** Spreadsheet-lite editor for a chart's categories/series — the stand-in for OnlyOffice's embedded sheet. */
+/** Spreadsheet-lite editor for a chart's categories/series — the stand-in for an embedded data sheet. */
 export function ChartDataDialog({ shape, onClose }: { shape: ChartShape; onClose: () => void }) {
   const [kind, setKind] = useState<ChartKind>(shape.chart);
   const [title, setTitle] = useState(shape.title ?? "");

@@ -3,8 +3,8 @@ import { hasPreset, presetOutline } from "./presetGeom";
 
 /**
  * Geometry facade. All preset outlines now come from the ECMA-376 evaluator
- * (src/render/presetGeom.ts) — the same definition tables PowerPoint and
- * OnlyOffice use — so every preset renders correctly at any aspect ratio.
+ * (src/render/presetGeom.ts) — the same definition tables PowerPoint uses —
+ * so every preset renders correctly at any aspect ratio.
  */
 export function presetPath(geom: PresetGeom, w: number, h: number, adj?: Record<string, number>): string {
   if (hasPreset(geom)) return presetOutline(geom, w, h, adj);
@@ -27,7 +27,7 @@ export interface ShapeCategory {
   shapes: PresetGeom[];
 }
 
-/** Categorized gallery mirroring OnlyOffice's insert-shape panel. */
+/** Categorized gallery mirroring PowerPoint's insert-shape panel. */
 export const SHAPE_CATEGORIES: ShapeCategory[] = [
   {
     label: "Basic shapes",

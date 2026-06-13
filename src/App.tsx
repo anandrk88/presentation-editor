@@ -16,7 +16,7 @@ import { parsePptx } from "./ooxml/parse";
 import { importPatternSlide } from "./ooxml/pattern";
 import { store } from "./state/store";
 import { useEditorState } from "./state/useStore";
-import { clearSnapshot, loadSnapshot, mediaFromSnapshot, saveSnapshot } from "./util/autosave";
+import { saveSnapshot } from "./util/autosave";
 import { initCustomFonts } from "./util/custom";
 import { embedConfig, initEmbedBridge, notifyHost, uploadTo } from "./util/embed";
 import { loadImageFile } from "./util/loadImage";
@@ -35,17 +35,8 @@ export default function App() {
     ? store.currentSlide?.shapes.find(s => s.id === state.chartEditId && s.kind === "chart")
     : undefined;
 
-  // ---------- autosave + recovery ----------
-  const [recovery, setRecovery] = useState<{ title: string; slideCount: number; time: number } | null>(null);
-
+  // ---------- autosave (debounced snapshot after every committed change) ----------
   useEffect(() => {
-    // offer restore once on boot (only if the saved deck has real content)
-    loadSnapshot().then(snap => {
-      if (snap && (snap.slideCount > 1 || snap.pres.slides[0]?.shapes.some(s => s.kind !== "sp" || (s.text?.paragraphs.some(p => p.runs.some(r => r.text)))))) {
-        setRecovery({ title: snap.title, slideCount: snap.slideCount, time: snap.time });
-      }
-    });
-    // debounced snapshot after every committed change
     let timer: number | undefined;
     const unsub = store.subscribe(() => {
       if (store.state.presenting) return;
@@ -54,17 +45,6 @@ export default function App() {
     });
     return () => { unsub(); window.clearTimeout(timer); };
   }, []);
-
-  const restoreSession = async () => {
-    const snap = await loadSnapshot();
-    if (snap) {
-      store.loadPresentation(snap.pres, mediaFromSnapshot(snap));
-      store.setState({ dirty: true });
-      store.setStatus("Session restored");
-      setTimeout(() => store.setStatus(null), 3000);
-    }
-    setRecovery(null);
-  };
 
   // re-load Google fonts for saved custom font pairs
   useEffect(() => { initCustomFonts(); }, []);
@@ -272,15 +252,6 @@ export default function App() {
 
   return (
     <div className="app">
-      {recovery && (
-        <div className="recovery-bar">
-          <span>
-            Unsaved session found — “{recovery.title || "Presentation"}” ({recovery.slideCount} slide{recovery.slideCount === 1 ? "" : "s"}, {new Date(recovery.time).toLocaleString()})
-          </span>
-          <button className="pane-btn primary sm" onClick={restoreSession}>Restore</button>
-          <button className="pane-btn sm" onClick={() => { clearSnapshot(); setRecovery(null); }}>Discard</button>
-        </div>
-      )}
       <Ribbon onOpenFile={onOpenFile} onSave={onSave} onPresent={present} onImportPattern={() => setPatternOpen(true)} />
       <div className="main-row">
         <div className="left-rail">
@@ -289,7 +260,7 @@ export default function App() {
             <Icon name="addSlide" size={18} />
           </button>
           <div className="rail-spacer" />
-          <button className="rail-btn" title="About" onClick={() => store.setStatus(`Presentation Editor v${typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "dev"} — browser-based OOXML editor`)}><InfoIcon /></button>
+          <button className="rail-btn" title="About" onClick={() => store.setStatus(`Presentation Editor v${typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "dev"}`)}><InfoIcon /></button>
         </div>
         {showThumbs && <SlidePanel onPresentFrom={i => { store.setState({ presenting: true, presentIndex: i }); }} />}
         <div className="center-col">

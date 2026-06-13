@@ -44,10 +44,24 @@ export type Fill =
   | { kind: "image"; mediaId: string; tile?: boolean }          // a:blipFill (stretch or tile)
   | { kind: "pattern"; prst: string; fg: ColorRef; bg: ColorRef }; // a:pattFill preset hatch
 
+/** Dash presets (names match OOXML a:prstDash tokens). */
+export type LineDash = "solid" | "dot" | "dash" | "dashDot" | "lgDash" | "lgDashDot" | "sysDot";
+/** Arrowhead shapes (names match OOXML a:headEnd/a:tailEnd type tokens). */
+export type ArrowKind = "none" | "triangle" | "stealth" | "arrow" | "diamond" | "oval";
+export interface ArrowEnd {
+  type: ArrowKind;
+  w?: "sm" | "med" | "lg";   // width, default med
+  len?: "sm" | "med" | "lg"; // length, default med
+}
+
 export interface LineProps {
   fill: Fill;          // outline color (none => no outline)
   widthPt: number;     // outline width in points
-  dash?: "solid" | "dash" | "dot";
+  dash?: LineDash;
+  /** Arrowhead at the line's start (a:headEnd). */
+  headEnd?: ArrowEnd;
+  /** Arrowhead at the line's end (a:tailEnd). */
+  tailEnd?: ArrowEnd;
 }
 
 export type TextAlign = "l" | "ctr" | "r" | "just";
@@ -194,6 +208,19 @@ export interface ChartSeries {
   dash?: "solid" | "dash" | "dot";
 }
 
+/** Individually stylable chart text elements (PowerPoint: select element → format). */
+export type ChartPart = "title" | "axisTitleX" | "axisTitleY" | "legend" | "axisLabels";
+
+/** Per-element text formatting (font/size/color/weight) for a chart part. */
+export interface ChartTextStyle {
+  font?: string;     // undefined -> theme minor font / Calibri
+  sizePt?: number;
+  color?: ColorRef;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+}
+
 export interface ChartShape extends ShapeBase {
   kind: "chart";
   chart: ChartKind;
@@ -212,8 +239,10 @@ export interface ChartShape extends ShapeBase {
   legend: boolean;
   /** Legend placement (c:legendPos), default right. */
   legendPos?: "r" | "b" | "t" | "l";
-  /** Axis/legend/label text size (c:txPr defRPr), default ~8pt. */
+  /** Axis/legend/label text size (c:txPr defRPr), default ~8pt. Global fallback; per-part styles override. */
   labelSizePt?: number;
+  /** Per-element text formatting (title, axis titles, legend, axis labels). */
+  partStyles?: Partial<Record<ChartPart, ChartTextStyle>>;
   /** Value labels on points/bars/slices (c:dLbls showVal / showPercent for pies). */
   dataLabels?: boolean;
   /** Percentage error bars on each series (c:errBars), undefined = off. */

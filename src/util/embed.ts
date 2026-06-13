@@ -1,5 +1,5 @@
 /**
- * Host-application integration (the OnlyOffice-DocEditor replacement surface).
+ * Host-application integration (the iframe embed + document bridge surface).
  *
  * Two ways to integrate:
  *  1. URL parameters — point an iframe (or tab) at the editor:

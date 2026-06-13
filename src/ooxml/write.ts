@@ -10,7 +10,7 @@ import { cssColorToHex, tintSvgText } from "../util/svgTint";
  * Serializes the document model into a complete OOXML PresentationML package
  * (ECMA-376): content types, package/part relationships, presentation, theme,
  * slide master, slide layout, slides and media. Output opens in PowerPoint,
- * LibreOffice and OnlyOffice.
+ * LibreOffice and other OOXML suites.
  */
 
 const NS_A = "http://schemas.openxmlformats.org/drawingml/2006/main";
@@ -60,11 +60,18 @@ function fillXml(f: Fill, imageRels?: Map<string, string>): string {
   return `<a:solidFill>${colorXml(f.color)}</a:solidFill>`;
 }
 
+function arrowEndXml(tag: "headEnd" | "tailEnd", e: import("../model/types").ArrowEnd | undefined): string {
+  if (!e || e.type === "none") return "";
+  return `<a:${tag} type="${e.type}" w="${e.w ?? "med"}" len="${e.len ?? "med"}"/>`;
+}
+
 function lineXml(l: LineProps): string {
   const w = Math.max(1, Math.round(l.widthPt * EMU_PER_PT));
   if (l.fill.kind === "none") return `<a:ln><a:noFill/></a:ln>`;
   const dash = l.dash && l.dash !== "solid" ? `<a:prstDash val="${l.dash}"/>` : "";
-  return `<a:ln w="${w}">${fillXml(l.fill)}${dash}</a:ln>`;
+  // headEnd/tailEnd come after dash + line-join in CT_LineProperties
+  const arrows = arrowEndXml("headEnd", l.headEnd) + arrowEndXml("tailEnd", l.tailEnd);
+  return `<a:ln w="${w}">${fillXml(l.fill)}${dash}<a:round/>${arrows}</a:ln>`;
 }
 
 function xfrmXml(s: Shape): string {
@@ -199,6 +206,28 @@ function chartColor(i: number, explicit?: ColorRef): ColorRef {
   return explicit ?? { kind: "scheme", slot: ACCENT_SLOTS[i % ACCENT_SLOTS.length] };
 }
 
+/** <a:defRPr>/<a:rPr> for a chart text element from a per-part style + fallback size. */
+function chartRunPr(tag: "a:defRPr" | "a:rPr", style: import("../model/types").ChartTextStyle | undefined, fallbackSz?: number): string {
+  const sz = style?.sizePt ?? fallbackSz;
+  const attrs = [
+    tag === "a:rPr" ? `lang="en-US"` : "",
+    sz !== undefined ? `sz="${Math.round(sz * 100)}"` : "",
+    style?.bold !== undefined ? `b="${style.bold ? 1 : 0}"` : "",
+    style?.italic ? `i="1"` : "",
+    style?.underline ? `u="sng"` : "",
+  ].filter(Boolean).join(" ");
+  const children =
+    (style?.color ? `<a:solidFill>${colorXml(style.color)}</a:solidFill>` : "") +
+    (style?.font ? `<a:latin typeface="${esc(style.font)}"/>` : "");
+  return `<${tag}${attrs ? " " + attrs : ""}>${children}</${tag}>`;
+}
+
+/** <c:txPr> block (used by legend + axes) carrying a per-part style. */
+function chartTxPr(style: import("../model/types").ChartTextStyle | undefined, fallbackSz?: number): string {
+  if (!style && fallbackSz === undefined) return "";
+  return `<c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr>${chartRunPr("a:defRPr", style, fallbackSz)}</a:pPr><a:endParaRPr lang="en-US"/></a:p></c:txPr>`;
+}
+
 function strLit(values: string[]): string {
   return `<c:ptCount val="${values.length}"/>` +
     values.map((v, i) => `<c:pt idx="${i}"><c:v>${esc(v)}</c:v></c:pt>`).join("");
@@ -263,13 +292,16 @@ export function chartSpaceXml(ch: ChartShape): string {
     ? `<c:dLbls><c:showLegendKey val="0"/><c:showVal val="${isPie ? 0 : 1}"/><c:showCatName val="0"/><c:showSerName val="0"/><c:showPercent val="${isPie ? 1 : 0}"/><c:showBubbleSize val="0"/></c:dLbls>`
     : "";
 
-  const axTitle = (text: string | undefined, horz: boolean) => text
-    ? `<c:title><c:tx><c:rich><a:bodyPr${horz ? "" : ` rot="-5400000" vert="horz"`}/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="900"/></a:pPr><a:r><a:rPr lang="en-US"/><a:t>${esc(text)}</a:t></a:r></a:p></c:rich></c:tx><c:overlay val="0"/></c:title>`
+  const axTitle = (text: string | undefined, horz: boolean, style?: import("../model/types").ChartTextStyle) => text
+    ? `<c:title><c:tx><c:rich><a:bodyPr${horz ? "" : ` rot="-5400000" vert="horz"`}/><a:lstStyle/><a:p><a:pPr>${chartRunPr("a:defRPr", style, 9)}</a:pPr><a:r>${chartRunPr("a:rPr", style, 9)}<a:t>${esc(text)}</a:t></a:r></a:p></c:rich></c:tx><c:overlay val="0"/></c:title>`
     : "";
   // horizontal (bottom) axis = cat for column/line/area, val for bar; swap for bar charts
   const isBar = ch.chart === "bar";
-  const catTitle = axTitle(isBar ? ch.axisTitleY : ch.axisTitleX, !isBar);
-  const valTitle = axTitle(isBar ? ch.axisTitleX : ch.axisTitleY, isBar);
+  const ps = ch.partStyles ?? {};
+  const catTitle = axTitle(isBar ? ch.axisTitleY : ch.axisTitleX, !isBar, isBar ? ps.axisTitleY : ps.axisTitleX);
+  const valTitle = axTitle(isBar ? ch.axisTitleX : ch.axisTitleY, isBar, isBar ? ps.axisTitleX : ps.axisTitleY);
+  // per-axis label text style (written to both axes so cat + val labels match)
+  const axLblTxPr = ps.axisLabels || ch.labelSizePt ? chartTxPr(ps.axisLabels, ch.labelSizePt) : "";
   const catDelete = isBar ? ch.hideAxisY : ch.hideAxisX;
   const valDelete = isBar ? ch.hideAxisX : ch.hideAxisY;
 
@@ -282,11 +314,11 @@ export function chartSpaceXml(ch: ChartShape): string {
 
   let plot: string;
   const axes =
-    `<c:catAx><c:axId val="${axId1}"/><c:scaling><c:orientation val="${ch.chart === "bar" ? "maxMin" : "minMax"}"/></c:scaling><c:delete val="${catDelete ? 1 : 0}"/><c:axPos val="${ch.chart === "bar" ? "l" : "b"}"/>${catTitle}<c:crossAx val="${axId2}"/></c:catAx>` +
-    `<c:valAx><c:axId val="${axId2}"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="${valDelete ? 1 : 0}"/><c:axPos val="${ch.chart === "bar" ? "b" : "l"}"/>${grid}${valTitle}<c:crossAx val="${axId1}"/></c:valAx>`;
+    `<c:catAx><c:axId val="${axId1}"/><c:scaling><c:orientation val="${ch.chart === "bar" ? "maxMin" : "minMax"}"/></c:scaling><c:delete val="${catDelete ? 1 : 0}"/><c:axPos val="${ch.chart === "bar" ? "l" : "b"}"/>${catTitle}${axLblTxPr}<c:crossAx val="${axId2}"/></c:catAx>` +
+    `<c:valAx><c:axId val="${axId2}"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="${valDelete ? 1 : 0}"/><c:axPos val="${ch.chart === "bar" ? "b" : "l"}"/>${grid}${valTitle}${axLblTxPr}<c:crossAx val="${axId1}"/></c:valAx>`;
   const scatterAxes =
-    `<c:valAx><c:axId val="${axId1}"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="${ch.hideAxisX ? 1 : 0}"/><c:axPos val="b"/>${axTitle(ch.axisTitleX, true)}<c:crossAx val="${axId2}"/></c:valAx>` +
-    `<c:valAx><c:axId val="${axId2}"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="${ch.hideAxisY ? 1 : 0}"/><c:axPos val="l"/>${grid}${axTitle(ch.axisTitleY, false)}<c:crossAx val="${axId1}"/></c:valAx>`;
+    `<c:valAx><c:axId val="${axId1}"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="${ch.hideAxisX ? 1 : 0}"/><c:axPos val="b"/>${axTitle(ch.axisTitleX, true, ps.axisTitleX)}${axLblTxPr}<c:crossAx val="${axId2}"/></c:valAx>` +
+    `<c:valAx><c:axId val="${axId2}"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="${ch.hideAxisY ? 1 : 0}"/><c:axPos val="l"/>${grid}${axTitle(ch.axisTitleY, false, ps.axisTitleY)}${axLblTxPr}<c:crossAx val="${axId1}"/></c:valAx>`;
   const axIds = `<c:axId val="${axId1}"/><c:axId val="${axId2}"/>`;
   const overlap = grouping === "stacked" || grouping === "percentStacked" ? `<c:overlap val="100"/>` : "";
 
@@ -316,9 +348,9 @@ export function chartSpaceXml(ch: ChartShape): string {
   }
 
   const title = ch.title
-    ? `<c:title><c:tx><c:rich><a:bodyPr rot="0" spcFirstLastPara="1" vertOverflow="ellipsis" vert="horz" wrap="square" anchor="ctr" anchorCtr="1"/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="1400" b="0"/></a:pPr><a:r><a:rPr lang="en-US"/><a:t>${esc(ch.title)}</a:t></a:r></a:p></c:rich></c:tx><c:overlay val="0"/></c:title><c:autoTitleDeleted val="0"/>`
+    ? `<c:title><c:tx><c:rich><a:bodyPr rot="0" spcFirstLastPara="1" vertOverflow="ellipsis" vert="horz" wrap="square" anchor="ctr" anchorCtr="1"/><a:lstStyle/><a:p><a:pPr>${chartRunPr("a:defRPr", { bold: false, ...ps.title }, 14)}</a:pPr><a:r>${chartRunPr("a:rPr", { bold: false, ...ps.title }, 14)}<a:t>${esc(ch.title)}</a:t></a:r></a:p></c:rich></c:tx><c:overlay val="0"/></c:title><c:autoTitleDeleted val="0"/>`
     : `<c:autoTitleDeleted val="1"/>`;
-  const legend = ch.legend ? `<c:legend><c:legendPos val="${ch.legendPos ?? "r"}"/><c:overlay val="0"/></c:legend>` : "";
+  const legend = ch.legend ? `<c:legend><c:legendPos val="${ch.legendPos ?? "r"}"/><c:overlay val="0"/>${chartTxPr(ps.legend, ch.labelSizePt)}</c:legend>` : "";
 
   // plot area styling sits inside c:plotArea (after the chart group + axes)
   const plotSpPr = ch.plotFill || ch.plotBorder

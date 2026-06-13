@@ -1,6 +1,6 @@
 import React from "react";
-import type { ChartShape, ColorTheme, SchemeSlot, TableShape } from "../model/types";
-import { resolveColor, resolveFill, tableBorderColor, tableCellStyle } from "../model/defaults";
+import type { ChartPart, ChartShape, ColorTheme, SchemeSlot, TableShape } from "../model/types";
+import { resolveColor, resolveFill, resolveFontName, tableBorderColor, tableCellStyle } from "../model/defaults";
 import { paintFor, ptToPx, px, shapeTransform, TextContent } from "./base";
 
 const ACCENTS: SchemeSlot[] = ["accent1", "accent2", "accent3", "accent4", "accent5", "accent6"];
@@ -117,31 +117,16 @@ function linePath(pts: (readonly [number, number])[], smooth?: boolean): string 
   return d;
 }
 
-export function ChartView({ shape, theme, defsPrefix = "c" }: { shape: ChartShape; theme: ColorTheme; defsPrefix?: string }) {
+/** Margins + plot rectangle for a chart, in shape-local px. Shared by the renderer and the canvas (part hit/highlight). */
+export function chartLayout(shape: ChartShape) {
   const w = px(shape.w), h = px(shape.h);
-  const cats = shape.categories;
-  const series = shape.series.length ? shape.series : [{ name: "", values: [] }];
   const isPie = shape.chart === "pie" || shape.chart === "doughnut";
-  const stk = stackInfo(shape);
-
   const isRadar = shape.chart === "radar";
-  const isScatter = shape.chart === "scatter";
-  const plain = isPie || isRadar; // no cartesian axes
-  // chart-wide text size override (axis labels, legend, category names)
-  const LABEL_STYLE: React.CSSProperties = {
-    ...BASE_LABEL_STYLE,
-    fontSize: shape.labelSizePt ? ptToPx(shape.labelSizePt) : 11,
-  };
-  const xs = isScatter
-    ? cats.map((c, i) => { const n = parseFloat(c); return Number.isFinite(n) ? n : i + 1; })
-    : [];
-  const xMax = isScatter ? niceMax(Math.max(1e-9, ...xs.map(v => Math.abs(v)))) : 0;
-
+  const plain = isPie || isRadar;
   const hideX = !!shape.hideAxisX, hideY = !!shape.hideAxisY;
   const legendPos = shape.legend ? (shape.legendPos ?? "r") : null;
   const xTitleH = shape.axisTitleX && !plain ? 16 : 0;
   const yTitleW = shape.axisTitleY && !plain ? 16 : 0;
-
   const titleH = shape.title ? 26 : 8;
   const mTop = titleH + (legendPos === "t" ? 20 : 0);
   const mLeft = (legendPos === "l" ? 100 : 0) + yTitleW + (plain ? 8 : hideY ? 8 : shape.chart === "bar" ? 78 : 38);
@@ -149,7 +134,59 @@ export function ChartView({ shape, theme, defsPrefix = "c" }: { shape: ChartShap
   const mBottom = (legendPos === "b" ? 20 : 0) + xTitleH + (plain ? 8 : hideX ? 8 : 22) + 4;
   const pw = Math.max(20, w - mLeft - mRight);
   const ph = Math.max(20, h - mTop - mBottom);
-  const ox = mLeft, oy = mTop;
+  return { w, h, plain, hideX, hideY, legendPos, xTitleH, yTitleW, titleH, ox: mLeft, oy: mTop, pw, ph };
+}
+
+/** Approximate clickable/highlightable boxes for each stylable chart part, in shape-local px. */
+export function chartPartRegions(shape: ChartShape): { part: ChartPart; x: number; y: number; w: number; h: number }[] {
+  const L = chartLayout(shape);
+  const out: { part: ChartPart; x: number; y: number; w: number; h: number }[] = [];
+  if (shape.title) out.push({ part: "title", x: L.w / 2 - 80, y: 2, w: 160, h: 22 });
+  if (shape.axisTitleX && !L.plain) out.push({ part: "axisTitleX", x: L.ox + L.pw / 2 - 70, y: L.h - 20, w: 140, h: 16 });
+  if (shape.axisTitleY && !L.plain) out.push({ part: "axisTitleY", x: (L.legendPos === "l" ? 104 : 4), y: L.oy + L.ph / 2 - 70, w: 16, h: 140 });
+  if (L.legendPos) {
+    if (L.legendPos === "r") out.push({ part: "legend", x: L.w - 96, y: L.oy, w: 92, h: Math.min(L.ph, 180) });
+    else if (L.legendPos === "l") out.push({ part: "legend", x: 4, y: L.oy, w: 92, h: Math.min(L.ph, 180) });
+    else if (L.legendPos === "t") out.push({ part: "legend", x: 6, y: L.titleH, w: L.w - 12, h: 18 });
+    else out.push({ part: "legend", x: 6, y: L.h - 18, w: L.w - 12, h: 16 });
+  }
+  if (!L.plain) out.push({ part: "axisLabels", x: L.ox, y: L.oy + L.ph + 1, w: L.pw, h: 16 });
+  return out;
+}
+
+export function ChartView({ shape, theme, defsPrefix = "c" }: { shape: ChartShape; theme: ColorTheme; defsPrefix?: string }) {
+  const cats = shape.categories;
+  const series = shape.series.length ? shape.series : [{ name: "", values: [] }];
+  const isPie = shape.chart === "pie" || shape.chart === "doughnut";
+  const stk = stackInfo(shape);
+
+  const isRadar = shape.chart === "radar";
+  const isScatter = shape.chart === "scatter";
+  const { w, h, plain, hideX, hideY, legendPos, xTitleH, titleH, ox, oy, pw, ph } = chartLayout(shape);
+  // chart-wide text size override (axis labels, legend, category names)
+  const LABEL_STYLE: React.CSSProperties = {
+    ...BASE_LABEL_STYLE,
+    fontSize: shape.labelSizePt ? ptToPx(shape.labelSizePt) : 11,
+  };
+  // per-element style: merge a part's overrides over a fallback base style
+  const partCss = (part: ChartPart, fallback: React.CSSProperties): React.CSSProperties => {
+    const ps = shape.partStyles?.[part];
+    if (!ps) return fallback;
+    const fam = ps.font ? resolveFontName(ps.font, theme) : undefined;
+    return {
+      ...fallback,
+      ...(fam ? { fontFamily: `'${fam}', Calibri, Arial, sans-serif` } : {}),
+      ...(ps.sizePt ? { fontSize: ptToPx(ps.sizePt) } : {}),
+      ...(ps.color ? { fill: resolveColor(ps.color, theme) } : {}),
+      ...(ps.bold !== undefined ? { fontWeight: ps.bold ? "bold" : "normal" } : {}),
+      ...(ps.italic ? { fontStyle: "italic" } : {}),
+      ...(ps.underline ? { textDecoration: "underline" } : {}),
+    };
+  };
+  const xs = isScatter
+    ? cats.map((c, i) => { const n = parseFloat(c); return Number.isFinite(n) ? n : i + 1; })
+    : [];
+  const xMax = isScatter ? niceMax(Math.max(1e-9, ...xs.map(v => Math.abs(v)))) : 0;
 
   const maxV = stk.maxV;
   const ticks = [0, 0.25, 0.5, 0.75, 1].map(t => t * maxV);
@@ -164,8 +201,16 @@ export function ChartView({ shape, theme, defsPrefix = "c" }: { shape: ChartShap
   const dl = !!shape.dataLabels;
   const err = shape.errorBarsPct;
   const DLBL: React.CSSProperties = { ...LABEL_STYLE, fill: "#595959" };
+  const AXLBL = partCss("axisLabels", LABEL_STYLE);   // axis tick + category labels
+  const LEGEND = partCss("legend", LABEL_STYLE);      // legend entry text
 
-  const dashArray = (d?: "solid" | "dash" | "dot") => (d === "dash" ? "6 4" : d === "dot" ? "2 3" : undefined);
+  const dashArray = (d?: import("../model/types").LineDash) =>
+    d === "dot" || d === "sysDot" ? "2 3"
+    : d === "dashDot" ? "8 3 2 3"
+    : d === "lgDash" ? "12 4"
+    : d === "lgDashDot" ? "12 4 2 4"
+    : d === "dash" ? "6 4"
+    : undefined;
   const gridsOn = !shape.hideGridlines;
   const gridStroke = shape.gridColor ? resolveColor(shape.gridColor, theme) : GRID_CLR;
   const chartStrokeOff = shape.chartBorder?.fill.kind === "none";
@@ -214,17 +259,17 @@ export function ChartView({ shape, theme, defsPrefix = "c" }: { shape: ChartShap
         />
       )}
       {shape.title && (
-        <text x={w / 2} y={16} textAnchor="middle" style={{ ...LABEL_STYLE, fontSize: 14, fill: "#404040" }}>{shape.title}</text>
+        <text x={w / 2} y={16} textAnchor="middle" style={partCss("title", { ...LABEL_STYLE, fontSize: 14, fill: "#404040" })}>{shape.title}</text>
       )}
       {shape.axisTitleX && !plain && (
-        <text x={ox + pw / 2} y={h - (legendPos === "b" ? 24 : 5)} textAnchor="middle" style={{ ...LABEL_STYLE, fill: "#595959" }}>{shape.axisTitleX}</text>
+        <text x={ox + pw / 2} y={h - (legendPos === "b" ? 24 : 5)} textAnchor="middle" style={partCss("axisTitleX", { ...LABEL_STYLE, fill: "#595959" })}>{shape.axisTitleX}</text>
       )}
       {shape.axisTitleY && !plain && (
         <text
           x={legendPos === "l" ? 112 : 12} y={oy + ph / 2}
           textAnchor="middle"
           transform={`rotate(-90 ${legendPos === "l" ? 112 : 12} ${oy + ph / 2})`}
-          style={{ ...LABEL_STYLE, fill: "#595959" }}
+          style={partCss("axisTitleY", { ...LABEL_STYLE, fill: "#595959" })}
         >{shape.axisTitleY}</text>
       )}
 
@@ -237,7 +282,7 @@ export function ChartView({ shape, theme, defsPrefix = "c" }: { shape: ChartShap
               return (
                 <g key={i}>
                   {(gridsOn || i === 0) && <line x1={x} y1={oy} x2={x} y2={oy + ph} stroke={i === 0 ? GRID_CLR : gridStroke} strokeWidth={i === 0 ? 1.2 : 0.7} />}
-                  {!hideX && <text x={x} y={oy + ph + 14} textAnchor="middle" style={LABEL_STYLE}>{fmtNum(t)}{stk.pct ? "%" : ""}</text>}
+                  {!hideX && <text x={x} y={oy + ph + 14} textAnchor="middle" style={AXLBL}>{fmtNum(t)}{stk.pct ? "%" : ""}</text>}
                 </g>
               );
             }
@@ -245,14 +290,14 @@ export function ChartView({ shape, theme, defsPrefix = "c" }: { shape: ChartShap
             return (
               <g key={i}>
                 {(gridsOn || i === 0) && <line x1={ox} y1={y} x2={ox + pw} y2={y} stroke={i === 0 ? GRID_CLR : gridStroke} strokeWidth={i === 0 ? 1.2 : 0.7} />}
-                {!hideY && <text x={ox - 5} y={y + 3.5} textAnchor="end" style={LABEL_STYLE}>{fmtNum(t)}{stk.pct ? "%" : ""}</text>}
+                {!hideY && <text x={ox - 5} y={y + 3.5} textAnchor="end" style={AXLBL}>{fmtNum(t)}{stk.pct ? "%" : ""}</text>}
               </g>
             );
           })}
           {isScatter && [0.25, 0.5, 0.75, 1].map(f => (
             <g key={`x${f}`}>
               {gridsOn && <line x1={ox + f * pw} y1={oy} x2={ox + f * pw} y2={oy + ph} stroke={gridStroke} strokeWidth={0.7} />}
-              <text x={ox + f * pw} y={oy + ph + 14} textAnchor="middle" style={LABEL_STYLE}>{fmtNum(f * xMax)}</text>
+              <text x={ox + f * pw} y={oy + ph + 14} textAnchor="middle" style={AXLBL}>{fmtNum(f * xMax)}</text>
             </g>
           ))}
         </g>
@@ -282,7 +327,7 @@ export function ChartView({ shape, theme, defsPrefix = "c" }: { shape: ChartShap
                 </g>
               );
             })}
-            {!hideX && <text x={ox + ci * groupW + groupW / 2} y={oy + ph + 14} textAnchor="middle" style={LABEL_STYLE}>{cat}</text>}
+            {!hideX && <text x={ox + ci * groupW + groupW / 2} y={oy + ph + 14} textAnchor="middle" style={AXLBL}>{cat}</text>}
           </g>
         );
       })}
@@ -311,7 +356,7 @@ export function ChartView({ shape, theme, defsPrefix = "c" }: { shape: ChartShap
                 </g>
               );
             })}
-            {!hideY && <text x={ox - 6} y={oy + ci * groupH + groupH / 2 + 3.5} textAnchor="end" style={LABEL_STYLE}>{truncate(cat, 14)}</text>}
+            {!hideY && <text x={ox - 6} y={oy + ci * groupH + groupH / 2 + 3.5} textAnchor="end" style={AXLBL}>{truncate(cat, 14)}</text>}
           </g>
         );
       })}
@@ -348,7 +393,7 @@ export function ChartView({ shape, theme, defsPrefix = "c" }: { shape: ChartShap
             );
           })}
           {!hideX && cats.map((cat, ci) => (
-            <text key={ci} x={ox + ((ci + 0.5) / cats.length) * pw} y={oy + ph + 14} textAnchor="middle" style={LABEL_STYLE}>{cat}</text>
+            <text key={ci} x={ox + ((ci + 0.5) / cats.length) * pw} y={oy + ph + 14} textAnchor="middle" style={AXLBL}>{cat}</text>
           ))}
         </g>
       )}
@@ -394,7 +439,7 @@ export function ChartView({ shape, theme, defsPrefix = "c" }: { shape: ChartShap
             ))}
             {cats.map((c, i) => {
               const [lx, ly] = pt(i, 1.13);
-              return <text key={i} x={lx} y={ly + 3} textAnchor="middle" style={LABEL_STYLE}>{truncate(c, 8)}</text>;
+              return <text key={i} x={lx} y={ly + 3} textAnchor="middle" style={AXLBL}>{truncate(c, 8)}</text>;
             })}
             {series.map((s, si) => {
               const color = seriesColor(si, theme, s.color);
@@ -457,7 +502,7 @@ export function ChartView({ shape, theme, defsPrefix = "c" }: { shape: ChartShap
               {items.map((it, i) => (
                 <g key={i} transform={`translate(${i * itemW} 0)`}>
                   <rect width={9} height={9} y={-8} fill={it.color} />
-                  <text x={13} y={0} style={LABEL_STYLE}>{truncate(it.label, 10)}</text>
+                  <text x={13} y={0} style={LEGEND}>{truncate(it.label, 10)}</text>
                 </g>
               ))}
             </g>
@@ -465,11 +510,11 @@ export function ChartView({ shape, theme, defsPrefix = "c" }: { shape: ChartShap
         }
         const x = legendPos === "l" ? 8 : w - 96 + 8;
         return (
-          <g transform={`translate(${x} ${mTop + 6})`}>
+          <g transform={`translate(${x} ${oy + 6})`}>
             {items.map((it, i) => (
               <g key={i} transform={`translate(0 ${i * 16})`}>
                 <rect width={9} height={9} y={-8} fill={it.color} />
-                <text x={13} y={0} style={LABEL_STYLE}>{truncate(it.label, 12)}</text>
+                <text x={13} y={0} style={LEGEND}>{truncate(it.label, 12)}</text>
               </g>
             ))}
           </g>

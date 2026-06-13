@@ -34,6 +34,19 @@ export async function loadImageFile(file: File): Promise<{ mediaId: string; natW
   return { mediaId, natW, natH };
 }
 
+/** Fetch an image from a URL into the media registry (CORS must permit it). */
+export async function loadImageFromUrl(url: string): Promise<{ mediaId: string; natW: number; natH: number }> {
+  const res = await fetch(url, { mode: "cors" });
+  if (!res.ok) throw new Error(`Could not fetch image (HTTP ${res.status})`);
+  const blob = await res.blob();
+  if (!/^image\//.test(blob.type) && !/\.(png|jpe?g|gif|svg|bmp|webp)(\?|$)/i.test(url)) {
+    throw new Error("That URL does not point to an image");
+  }
+  const name = (url.split("/").pop() || "image").split("?")[0] || "image";
+  const file = new File([blob], name, { type: blob.type || "image/png" });
+  return loadImageFile(file);
+}
+
 /** Ensure the svg root has explicit width/height (derived from viewBox when absent). */
 export function normalizeSvg(text: string): string {
   try {

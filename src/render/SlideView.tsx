@@ -7,7 +7,7 @@ import { resolveColor, resolveFill } from "../model/defaults";
 import { cssColorToHex, tintSvgText } from "../util/svgTint";
 import { isLineGeom } from "./geometry";
 import { presetOutline, presetPaths } from "./presetGeom";
-import { paintFor, paraStyle, ptToPx, px, shapeTransform, TextContent } from "./base";
+import { arrowMarker, lineDashArray, paintFor, paraStyle, ptToPx, px, shapeTransform, TextContent } from "./base";
 import { ChartView, TableView } from "./GraphicViews";
 
 // shared render helpers re-exported for canvas/overlay/panel code
@@ -60,14 +60,23 @@ function SpView({ shape, theme, media, hideText, showPrompts, defsPrefix }: { sh
   const [fill, fillDef] = paintFor(shape.fill, theme, `${defsPrefix}-f-${shape.id}`, media);
   const stroke = resolveFill(shape.line.fill, theme);
   const lineOnly = isLineGeom(shape.geom) && !shape.custPath;
+  const widthPx = stroke === "none" ? 0 : ptToPx(shape.line.widthPt);
   const strokeProps = {
     stroke,
-    strokeWidth: stroke === "none" ? 0 : ptToPx(shape.line.widthPt),
-    strokeDasharray: shape.line.dash === "dash" ? "6 4" : shape.line.dash === "dot" ? "2 3" : undefined,
+    strokeWidth: widthPx,
+    strokeDasharray: lineDashArray(shape.line.dash, widthPx),
   };
+  // arrowheads (line/connector shapes): per-shape markers colored to the stroke
+  const hd = shape.line.headEnd, tl = shape.line.tailEnd;
+  const hasArrows = stroke !== "none" && ((hd && hd.type !== "none") || (tl && tl.type !== "none"));
+  const headId = `${defsPrefix}-ah-${shape.id}`, tailId = `${defsPrefix}-at-${shape.id}`;
+  const markerStart = hasArrows && hd && hd.type !== "none" ? `url(#${headId})` : undefined;
+  const markerEnd = hasArrows && tl && tl.type !== "none" ? `url(#${tailId})` : undefined;
+  const arrowProps = hasArrows ? { markerStart, markerEnd } : {};
   return (
     <g transform={shapeTransform(shape)}>
       {fillDef && <defs>{fillDef}</defs>}
+      {hasArrows && <defs>{arrowMarker(headId, hd, stroke)}{arrowMarker(tailId, tl, stroke)}</defs>}
       {shape.custPath ? (
         <path
           d={shape.custPath.d}
@@ -84,8 +93,9 @@ function SpView({ shape, theme, media, hideText, showPrompts, defsPrefix }: { sh
             fillRule="evenodd"
             fill={lineOnly || p.noFill ? "none" : fill}
             opacity={p.darken ? 0.85 : p.lighten ? 0.95 : undefined}
-            strokeLinecap={lineOnly ? "round" : undefined}
+            strokeLinecap={lineOnly && !hasArrows ? "round" : undefined}
             {...strokeProps}
+            {...(lineOnly ? arrowProps : {})}
             stroke={p.noStroke ? "none" : strokeProps.stroke}
           />
         ))

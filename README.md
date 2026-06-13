@@ -1,65 +1,42 @@
-# Presentation Editor — an ONLYOFFICE-style OOXML slide editor for the browser
+# Presentation Editor
 
-A PowerPoint-style presentation editor that runs entirely in the browser and
-reads/writes **real `.pptx` files** (ECMA-376 PresentationML). The UI and
-architecture follow the open-source ONLYOFFICE Presentation Editor — see
-[ARCHITECTURE.md](ARCHITECTURE.md) for the verified mapping to the
-`sdkjs` / `web-apps` sources.
+A browser-based **PowerPoint (`.pptx`) editor**. It runs entirely client-side
+(React + TypeScript + Vite) with a native OOXML/PresentationML engine that reads
+and writes **real `.pptx` files** — open a deck made in PowerPoint, edit it, and
+save a `.pptx` that opens cleanly back in PowerPoint, LibreOffice, or any
+OOXML-compatible suite. No server.
 
 ## Run it
 
 ```bash
 npm install
 npm run dev        # http://localhost:5173
-npm run build      # production bundle in dist/ (static, no server needed)
-npm run smoke      # OOXML round-trip validation (writes .smoke/smoke-output.pptx)
+npm run build      # static bundle → dist/  (no server needed)
+npm run smoke      # .pptx round-trip engine test → "SMOKE OK"
 ```
+
+Open `http://localhost:5173/embed-test.html` for the iframe-embed demo.
 
 ## What it does
 
-**Editor chrome (ONLYOFFICE classic-light look)**
-- Terracotta `#B75B44` header with editable document name and quick-access save/undo/redo
-- Ribbon tabs: **File · Home · Insert · Design · Transitions**, with the static
-  cluster (copy/paste/undo/redo, Add Slide with layout menu, Start slideshow) on every tab
-- Left icon rail + slide thumbnails: click to select, drag to reorder,
-  right-click menu (new/duplicate/delete, move to beginning/end, present from here)
-- Right settings rail that auto-opens per selection: slide background, shape
-  fill/stroke/size/position/rotation/flips, image settings
-- Status bar: slideshow, "Slide N of M", theme name, fit-to-slide / fit-to-width, zoom
+Open & save real `.pptx`; edit text (full run/paragraph formatting, theme
+fonts), **187 preset shapes** + freeform geometry, images (replace, interactive
+crop, SVG recolor), **tables** (PowerPoint-style design gallery, merge/split,
+layout ops), **charts** (8 kinds with formatting + per-element text styling),
+**groups** (move/resize/rotate/flip as one), gradient/picture/pattern fills, line
+arrowheads & dashes, custom color palettes & fonts, self-hosted bundled fonts,
+find & replace, rulers, present mode, undo/redo, autosave.
 
-**Editing**
-- Six slide layouts with real placeholders ("Click to add title…")
-- 18 OOXML preset shapes drawn by click-drag, plus text boxes and images
-- Select / multi-select (shift, marquee), move with smart center guides,
-  8-handle resize (shift = aspect), rotation handle with snapping
-- In-place rich text editing (double-click / F2): per-run bold, italic,
-  underline, strikethrough, font, size, color; alignment, bullets, numbering,
-  vertical anchor, line spacing
-- Theme color system: six color schemes on the Design tab recolor every
-  theme-bound shape — and survive into the saved file
-- Slide transitions (fade, push) with speed/direction, applied in the slideshow
-  and written to OOXML
-- Full-screen presenting (F5), undo/redo, cut/copy/paste/duplicate, arrow-key
-  nudge, Ctrl+S to download
+It's embeddable in a host app (open from a URL, save back via presigned PUT or
+`postMessage`).
 
-**OOXML engine (browser-only, no server)**
-- **Save**: complete valid `.pptx` package — content types, relationships,
-  theme, slide master + layout, slides, media — opens in PowerPoint,
-  LibreOffice and ONLYOFFICE
-- **Open**: parses `.pptx` including slide size, themes (scheme colors + fonts),
-  solid/gradient-approximated fills, outlines, preset geometry mapping, groups
-  (flattened with transforms), pictures, text with run/paragraph properties,
-  transitions — and resolves placeholder geometry through the slideLayout →
-  slideMaster inheritance chain, the detail that makes real-world decks land
-  in the right place
+## Documentation
 
-## Known limits (v1)
-
-- Tables, charts, SmartArt import as labeled placeholder boxes; audio/video not supported
-- Gradient/picture fills import approximated to solid; custom geometry falls back to rectangles
-- Placeholder shapes re-export as plain positioned shapes (they keep look and position, not `ph` re-bindability)
-- Text autofit and exact line-break parity with PowerPoint are approximate (browser text layout)
-- No collaboration, comments, notes, or animations beyond slide transitions
+Start at **[CLAUDE.md](CLAUDE.md)** — the documentation index. It links to
+[`docs/`](docs/) for architecture, the document model, the OOXML engine,
+rendering, state, the UI, the full feature catalog, testing, and an honest
+[code-quality assessment](docs/12-code-quality.md). Host-app integration and
+deployment are in **[INTEGRATION.md](INTEGRATION.md)**.
 
 ## Keyboard
 
@@ -70,6 +47,7 @@ npm run smoke      # OOXML round-trip validation (writes .smoke/smoke-output.ppt
 | F2 or double-click | Edit text |
 | Ctrl+Z / Ctrl+Y | Undo / redo |
 | Ctrl+C/X/V, Ctrl+D | Copy / cut / paste / duplicate |
+| Ctrl+G / Ctrl+Shift+G | Group / ungroup |
 | Arrows (+Shift) | Nudge 1px (10px) |
-| Ctrl+S | Download .pptx |
+| Ctrl+S | Save .pptx |
 | PageUp / PageDown | Previous / next slide |

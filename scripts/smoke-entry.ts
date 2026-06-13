@@ -310,6 +310,34 @@ export async function runSmoke(patternJson?: string): Promise<{ zipBytes: Uint8A
     ok(re5.warnings.length === 0, "presets round-trip: no warnings", re5.warnings.join("; "));
   }
 
+  // ---------- line arrowheads + dash styles round-trip ----------
+  {
+    const presL = newPresentation();
+    const ln = makeShape("line", 914400, 914400, 3000000, 0);
+    ln.line = {
+      fill: { kind: "solid", color: { kind: "srgb", hex: "C00000" } },
+      widthPt: 3,
+      dash: "lgDashDot",
+      headEnd: { type: "oval", w: "lg", len: "lg" },
+      tailEnd: { type: "triangle", w: "med", len: "lg" },
+    };
+    presL.slides = [{ ...makeSlide("blank"), shapes: [ln] }];
+    const slideL = await (await buildPptx(presL, new Map())).file("ppt/slides/slide1.xml")!.async("text");
+    ok(slideL.includes('<a:tailEnd type="triangle"') && slideL.includes('<a:headEnd type="oval"'), "arrows: head/tail ends written");
+    ok(slideL.includes('<a:prstDash val="lgDashDot"/>'), "arrows: extended dash written");
+    const reL = await parsePptx(await (await buildPptx(presL, new Map())).generateAsync({ type: "uint8array" }), "lines.pptx");
+    const rln = reL.pres.slides[0].shapes.find(s => s.kind === "sp") as SpShape;
+    ok(rln.line.headEnd?.type === "oval" && rln.line.headEnd.len === "lg" && rln.line.headEnd.w === "lg", "arrows: begin arrowhead survives", JSON.stringify(rln.line.headEnd));
+    ok(rln.line.tailEnd?.type === "triangle" && rln.line.tailEnd.len === "lg", "arrows: end arrowhead survives", JSON.stringify(rln.line.tailEnd));
+    ok(rln.line.dash === "lgDashDot", "arrows: extended dash survives round-trip", String(rln.line.dash));
+    // a plain line gains no arrows
+    const plain = makeShape("line", 0, 0, 1000000, 0);
+    const reP = await parsePptx(await (await buildPptx({ ...newPresentation(), slides: [{ ...makeSlide("blank"), shapes: [plain] }] }, new Map())).generateAsync({ type: "uint8array" }), "plainline.pptx");
+    const rp = reP.pres.slides[0].shapes.find(s => s.kind === "sp") as SpShape;
+    ok(!rp.line.headEnd && !rp.line.tailEnd, "arrows: plain line stays arrowless");
+    ok(reL.warnings.length === 0, "arrows round-trip: no warnings");
+  }
+
   // ---------- text features (case/columns/super/highlight) + chart variants ----------
   {
     const pres6 = newPresentation();
@@ -608,6 +636,46 @@ export async function runSmoke(patternJson?: string): Promise<{ zipBytes: Uint8A
     ok(cE.series.every(s => s.lineWidthPt === 3.5 && s.dash === "dot"), "chart fmt: series line width + dash survive", JSON.stringify(cE.series[0].lineWidthPt));
     ok(cE.markerSizePt === 9, "chart fmt: marker size survives", String(cE.markerSizePt));
     ok(reE.warnings.length === 0, "chart fmt round-trip: no warnings", reE.warnings.join("; "));
+  }
+
+  // ---------- per-element chart text styling (title/axes/legend/labels) ----------
+  {
+    const presPS = newPresentation();
+    const chPS = makeChart("column", 914400, 914400, 6400800, 3657600, {});
+    chPS.title = "Quarterly Revenue";
+    chPS.axisTitleX = "Quarter";
+    chPS.axisTitleY = "USD (M)";
+    chPS.labelSizePt = 10;
+    chPS.partStyles = {
+      title: { font: "Georgia", sizePt: 20, color: { kind: "srgb", hex: "C00000" }, bold: true, italic: true },
+      axisTitleX: { sizePt: 12, color: { kind: "srgb", hex: "1F4E79" }, bold: true },
+      axisTitleY: { underline: true, color: { kind: "scheme", slot: "accent2" } },
+      legend: { sizePt: 9, color: { kind: "srgb", hex: "548235" } },
+      axisLabels: { sizePt: 8, color: { kind: "srgb", hex: "404040" } },
+    };
+    presPS.slides = [{ ...makeSlide("blank"), shapes: [chPS] }];
+    const rePS = await parsePptx(await (await buildPptx(presPS, new Map())).generateAsync({ type: "uint8array" }), "chartparts.pptx");
+    const cPS = rePS.pres.slides[0].shapes.find(s => s.kind === "chart") as ChartShape;
+    const t = cPS.partStyles?.title;
+    ok(t?.font === "Georgia" && t.sizePt === 20 && t.bold === true && t.italic === true && t.color?.kind === "srgb" && t.color.hex === "C00000",
+      "chart parts: title font/size/bold/italic/color survive", JSON.stringify(t));
+    ok(cPS.partStyles?.axisTitleX?.sizePt === 12 && cPS.partStyles.axisTitleX.bold === true && cPS.partStyles.axisTitleX.color?.kind === "srgb" && cPS.partStyles.axisTitleX.color.hex === "1F4E79",
+      "chart parts: X axis title style survives", JSON.stringify(cPS.partStyles?.axisTitleX));
+    ok(cPS.partStyles?.axisTitleY?.underline === true && cPS.partStyles.axisTitleY.color?.kind === "scheme" && cPS.partStyles.axisTitleY.color.slot === "accent2",
+      "chart parts: Y axis title underline + scheme color survive", JSON.stringify(cPS.partStyles?.axisTitleY));
+    ok(cPS.partStyles?.legend?.sizePt === 9 && cPS.partStyles.legend.color?.kind === "srgb" && cPS.partStyles.legend.color.hex === "548235",
+      "chart parts: legend style survives", JSON.stringify(cPS.partStyles?.legend));
+    ok(cPS.partStyles?.axisLabels?.sizePt === 8 && cPS.partStyles.axisLabels.color?.kind === "srgb",
+      "chart parts: axis label style survives", JSON.stringify(cPS.partStyles?.axisLabels));
+    ok(cPS.labelSizePt === 10, "chart parts: global label size still distinct from per-part", String(cPS.labelSizePt));
+
+    // an UNSTYLED chart must NOT gain partStyles on round-trip (no default pollution)
+    const chPlain = makeChart("column", 0, 0, 4572000, 3200400, {});
+    chPlain.title = "Plain";
+    const rePlain = await parsePptx(await (await buildPptx({ ...newPresentation(), slides: [{ ...makeSlide("blank"), shapes: [chPlain] }] }, new Map())).generateAsync({ type: "uint8array" }), "plain.pptx");
+    const cPlain = rePlain.pres.slides[0].shapes.find(s => s.kind === "chart") as ChartShape;
+    ok(cPlain.partStyles === undefined, "chart parts: unstyled chart stays unstyled (no default pollution)", JSON.stringify(cPlain.partStyles));
+    ok(rePS.warnings.length === 0 && rePlain.warnings.length === 0, "chart parts round-trip: no warnings");
   }
 
   // ---------- gridline color/visibility + pie per-slice colors (dPt) ----------

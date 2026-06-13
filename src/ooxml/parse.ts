@@ -1,6 +1,6 @@
 import JSZip from "jszip";
 import type {
-  ChartKind, ChartSeries, ChartShape, ColorRef, ColorTheme, Fill, LineProps,
+  ChartKind, ChartSeries, ChartShape, ChartTextStyle, ColorRef, ColorTheme, Fill, LineProps,
   MediaItem, Paragraph, Presentation, PresetGeom, Run, SchemeSlot, SlideModel,
   SpShape, TableCell, TableShape, TextBody,
 } from "../model/types";
@@ -9,7 +9,7 @@ import { hasPreset } from "../render/presetGeom";
 
 /**
  * OOXML PresentationML reader: pptx (zip) -> document model.
- * Follows package relationships the same way OnlyOffice's loader does:
+ * Follows package relationships the same way PowerPoint's loader does:
  * /_rels/.rels -> presentation.xml -> slide parts; placeholder shapes without
  * an xfrm resolve their geometry through slideLayout -> slideMaster.
  */
@@ -261,15 +261,32 @@ function parseCustGeom(custGeom: Element): { w: number; h: number; d: string } |
   return { w: w || 1, h: h || 1, d };
 }
 
+const LINE_DASHES = new Set(["solid", "dot", "dash", "dashDot", "lgDash", "lgDashDot", "sysDot"]);
+function parseArrowEnd(el: Element | null): import("../model/types").ArrowEnd | undefined {
+  if (!el) return undefined;
+  const type = attr(el, "type");
+  const kinds = new Set(["triangle", "stealth", "arrow", "diamond", "oval"]);
+  if (!type || !kinds.has(type)) return undefined;
+  const sz = (v: string | null) => (v === "sm" || v === "lg" ? v : undefined);
+  return { type: type as import("../model/types").ArrowKind, w: sz(attr(el, "w")), len: sz(attr(el, "len")) };
+}
+
 function parseLn(spPr: Element | null): LineProps | undefined {
   const ln = kid(spPr, "ln");
   if (!ln) return undefined;
   const widthPt = iattr(ln, "w", 9525) / 12700;
   const fill = parseFill(ln) ?? { kind: "none" as const };
-  const dashEl = kid(ln, "prstDash");
-  const dashVal = attr(dashEl, "val");
-  const dash = dashVal && dashVal.includes("dash") ? "dash" as const : dashVal === "sysDot" || dashVal === "dot" ? "dot" as const : "solid" as const;
-  return { fill, widthPt: Math.max(0.25, widthPt), dash };
+  const dashVal = attr(kid(ln, "prstDash"), "val");
+  // keep the exact token when supported; map a few aliases, else solid
+  const dash: import("../model/types").LineDash =
+    dashVal && LINE_DASHES.has(dashVal) ? dashVal as import("../model/types").LineDash
+    : dashVal === "sysDash" ? "dash"
+    : dashVal === "sysDashDot" ? "dashDot"
+    : dashVal && dashVal.includes("Dash") ? "dash"
+    : "solid";
+  const headEnd = parseArrowEnd(kid(ln, "headEnd"));
+  const tailEnd = parseArrowEnd(kid(ln, "tailEnd"));
+  return { fill, widthPt: Math.max(0.25, widthPt), dash, headEnd, tailEnd };
 }
 
 // ---------- geometry ----------
@@ -546,7 +563,7 @@ function richText(el: Element | null): string | undefined {
   return out || undefined;
 }
 
-function parseChartDoc(doc: Document): Pick<ChartShape, "chart" | "categories" | "series" | "title" | "legend" | "grouping" | "marker" | "smooth" | "radarStyle" | "labelSizePt" | "legendPos" | "dataLabels" | "errorBarsPct" | "axisTitleX" | "axisTitleY" | "hideAxisX" | "hideAxisY" | "chartFill" | "chartBorder" | "plotFill" | "plotBorder" | "markerSizePt" | "pointColors" | "gridColor" | "hideGridlines"> | null {
+function parseChartDoc(doc: Document): Pick<ChartShape, "chart" | "categories" | "series" | "title" | "legend" | "grouping" | "marker" | "smooth" | "radarStyle" | "labelSizePt" | "legendPos" | "dataLabels" | "errorBarsPct" | "axisTitleX" | "axisTitleY" | "hideAxisX" | "hideAxisY" | "chartFill" | "chartBorder" | "plotFill" | "plotBorder" | "markerSizePt" | "pointColors" | "gridColor" | "hideGridlines" | "partStyles"> | null {
   const chart = kid(doc.documentElement, "chart");
   const plotArea = kid(chart, "plotArea");
   if (!plotArea) return null;
@@ -612,19 +629,31 @@ function parseChartDoc(doc: Document): Pick<ChartShape, "chart" | "categories" |
   // axes: read titles + deletion by position (b = horizontal, l = vertical)
   let axisTitleX: string | undefined, axisTitleY: string | undefined;
   let hideAxisX: boolean | undefined, hideAxisY: boolean | undefined;
+  const partStyles: NonNullable<ChartShape["partStyles"]> = {};
+  let axisLabelsStyle: ChartTextStyle | undefined;
   for (const axTag of ["catAx", "valAx", "dateAx"]) {
     for (const ax of kids(plotArea, axTag)) {
       const pos = attr(kid(ax, "axPos"), "val");
-      const titleText = richText(kid(ax, "title"));
+      const titleEl = kid(ax, "title");
+      const titleText = richText(titleEl);
       const deleted = attr(kid(ax, "delete"), "val") === "1";
+      const tStyle = titleEl ? parseChartRunStyle(titleEl) : undefined;
+      const lblStyle = parseChartRunStyle(kid(ax, "txPr"));
+      if (lblStyle) axisLabelsStyle = { ...axisLabelsStyle, ...lblStyle };
       if (pos === "b" || pos === "t") {
         if (titleText) axisTitleX = titleText;
+        if (tStyle) partStyles.axisTitleX = tStyle;
         if (deleted) hideAxisX = true;
       } else if (pos === "l" || pos === "r") {
         if (titleText) axisTitleY = titleText;
+        if (tStyle) partStyles.axisTitleY = tStyle;
         if (deleted) hideAxisY = true;
       }
     }
+  }
+  // bar charts swap axis identity — our X/Y title styles must follow suit
+  if (kind === "bar") {
+    const tx = partStyles.axisTitleX; partStyles.axisTitleX = partStyles.axisTitleY; partStyles.axisTitleY = tx;
   }
   // bar charts swap: the left axis is the category axis (our Y), bottom is values (our X)
   // — handled naturally because we keyed off axPos, not axis type.
@@ -684,12 +713,15 @@ function parseChartDoc(doc: Document): Pick<ChartShape, "chart" | "categories" |
     radarStyle = style === "filled" ? "filled" : style === "marker" || anyMarker ? "marker" : "standard";
   }
 
-  const title = richText(kid(chart, "title", "tx", "rich"));
+  const titleRich = kid(chart, "title", "tx", "rich");
+  const title = richText(titleRich);
+  const titleStyle = parseChartRunStyle(titleRich);
 
   // legend position + chart/plot area styling
   const legendEl = kid(chart, "legend");
   const lp = attr(kid(legendEl, "legendPos"), "val");
   const legendPos = lp === "b" || lp === "t" || lp === "l" ? lp : undefined;
+  const legendStyle = parseChartRunStyle(kid(legendEl, "txPr"));
   const chartSpPr = kid(doc.documentElement, "spPr");
   const chartFill = chartSpPr ? parseFill(chartSpPr) : undefined;
   const chartBorder = chartSpPr ? parseLn(chartSpPr) : undefined;
@@ -716,14 +748,58 @@ function parseChartDoc(doc: Document): Pick<ChartShape, "chart" | "categories" |
     walkSz(txPr);
   }
 
+  // assemble per-part styles, pruning sizes equal to the element's default
+  const prune = (s: ChartTextStyle | undefined, defSz?: number): ChartTextStyle | undefined => {
+    if (!s) return undefined;
+    const o = { ...s };
+    if (defSz !== undefined && o.sizePt === defSz) delete o.sizePt;
+    return Object.keys(o).length ? o : undefined;
+  };
+  const ps: NonNullable<ChartShape["partStyles"]> = {};
+  const tStyle = prune(titleStyle, 14);
+  if (tStyle) ps.title = tStyle;
+  if (partStyles.axisTitleX) { const v = prune(partStyles.axisTitleX, 9); if (v) ps.axisTitleX = v; }
+  if (partStyles.axisTitleY) { const v = prune(partStyles.axisTitleY, 9); if (v) ps.axisTitleY = v; }
+  const legStyle = prune(legendStyle, labelSizePt);
+  if (legStyle) ps.legend = legStyle;
+  const axStyle = prune(axisLabelsStyle, labelSizePt);
+  if (axStyle) ps.axisLabels = axStyle;
+  const partStylesOut = Object.keys(ps).length ? ps : undefined;
+
   return {
     chart: kind, categories, series, title,
     legend: !!legendEl, legendPos,
     grouping, marker, smooth, radarStyle, labelSizePt,
     dataLabels, errorBarsPct, axisTitleX, axisTitleY, hideAxisX, hideAxisY,
     chartFill, chartBorder, plotFill, plotBorder, markerSizePt,
-    pointColors, gridColor, hideGridlines,
+    pointColors, gridColor, hideGridlines, partStyles: partStylesOut,
   };
+}
+
+/** Extract a per-part ChartTextStyle from the first a:rPr / a:defRPr under an element. */
+function parseChartRunStyle(el: Element | null): ChartTextStyle | undefined {
+  if (!el) return undefined;
+  const holder: { rpr: Element | null } = { rpr: null };
+  const walk = (n: Element) => {
+    if (holder.rpr) return;
+    for (let i = 0; i < n.childNodes.length; i++) {
+      const c = n.childNodes[i] as Element;
+      if (c.nodeType !== 1) continue;
+      if (c.localName === "rPr" || c.localName === "defRPr") { holder.rpr = c; return; }
+      walk(c);
+    }
+  };
+  walk(el);
+  const rpr = holder.rpr;
+  if (!rpr) return undefined;
+  const style: ChartTextStyle = {};
+  const sz = iattr(rpr, "sz", 0); if (sz) style.sizePt = sz / 100;
+  if (attr(rpr, "b") === "1") style.bold = true;
+  if (attr(rpr, "i") === "1") style.italic = true;
+  const u = attr(rpr, "u"); if (u && u !== "none") style.underline = true;
+  const sf = kid(rpr, "solidFill"); const col = sf ? parseColorChoice(sf) : null; if (col) style.color = col;
+  const tf = attr(kid(rpr, "latin"), "typeface"); if (tf) style.font = tf;
+  return Object.keys(style).length ? style : undefined;
 }
 
 // ---------- placeholders ----------

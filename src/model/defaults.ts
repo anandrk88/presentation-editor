@@ -3,12 +3,13 @@
   PresetGeom, Presentation, Run, SchemeSlot, Shape, SlideModel, SpShape,
   TableCell, TableShape, TextBody,
 } from "./types";
+import { BUNDLED_FONTS } from "../fonts/bundled";
 
 export const EMU_PER_INCH = 914400;
 export const EMU_PER_PX = 9525; // 96 dpi
 export const EMU_PER_PT = 12700;
 
-// 16:9 default slide size (same as PowerPoint / OnlyOffice default)
+// 16:9 default slide size (same as PowerPoint default)
 export const SLIDE_W = 12192000;
 export const SLIDE_H = 6858000;
 
@@ -92,11 +93,15 @@ export const THEME_FONT_PAIRS: { name: string; major: string; minor: string }[] 
   { name: "Impact – Segoe UI", major: "Impact", minor: "Segoe UI" },
 ];
 
-export const FONT_LIST = [
+const SYSTEM_FONTS = [
   "Arial", "Calibri", "Calibri Light", "Cambria", "Comic Sans MS", "Consolas",
   "Courier New", "Georgia", "Impact", "Segoe UI", "Tahoma", "Times New Roman",
   "Trebuchet MS", "Verdana",
 ];
+
+// self-hosted families (bundled into the app) are pickable everywhere and render
+// in the editor; merged + de-duped with the system fonts, alphabetical.
+export const FONT_LIST = [...new Set([...BUNDLED_FONTS, ...SYSTEM_FONTS])].sort((a, b) => a.localeCompare(b));
 
 export const FONT_SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 40, 44, 48, 54, 60, 66, 72, 80, 96];
 

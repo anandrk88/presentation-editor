@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
-import type { ChartKind, ChartShape, ColorRef, ColorTheme, Fill, GradientStop, PicShape, SchemeSlot, SpShape, TableShape, TableStyleFamily } from "../model/types";
+import type { ArrowEnd, ArrowKind, ChartKind, ChartShape, ColorRef, ColorTheme, Fill, GradientStop, LineDash, PicShape, SchemeSlot, SpShape, TableShape, TableStyleFamily } from "../model/types";
 import { CHART_NAMES, EMU_PER_PX, resolveColor, tableBorderColor, tableCellStyle } from "../model/defaults";
+import { isLineGeom } from "../render/geometry";
 import { seriesColor } from "../render/GraphicViews";
 import { store } from "../state/store";
 import { useEditorState } from "../state/useStore";
@@ -18,7 +19,29 @@ const FILL_TYPES = [
 
 const PATTERN_PRESETS = ["ltDnDiag", "ltUpDiag", "dkDnDiag", "horz", "vert", "cross", "diagCross", "smGrid"];
 
-/** Background offers the same fill kinds minus "No fill" (matches OnlyOffice). */
+const ARROW_OPTS: [ArrowKind, string][] = [
+  ["none", "None"], ["triangle", "Triangle"], ["arrow", "Open arrow"],
+  ["stealth", "Stealth"], ["diamond", "Diamond"], ["oval", "Oval"],
+];
+/** Set the begin/end arrowhead on a line shape (keeps current size). */
+function setLineEnd(id: string, which: "headEnd" | "tailEnd", type: ArrowKind) {
+  store.updateShapes([id], s => {
+    if (s.kind !== "sp") return s;
+    const cur = s.line[which];
+    const end: ArrowEnd | undefined = type === "none" ? undefined : { type, w: cur?.w ?? "med", len: cur?.len ?? "med" };
+    return { ...s, line: { ...s.line, [which]: end } };
+  });
+}
+/** Set arrowhead size on both ends of a line shape. */
+function setArrowSize(id: string, size: "sm" | "med" | "lg") {
+  store.updateShapes([id], s => {
+    if (s.kind !== "sp") return s;
+    const upd = (e?: ArrowEnd): ArrowEnd | undefined => (e ? { ...e, w: size, len: size } : e);
+    return { ...s, line: { ...s.line, headEnd: upd(s.line.headEnd), tailEnd: upd(s.line.tailEnd) } };
+  });
+}
+
+/** Background offers the same fill kinds minus "No fill" (matches PowerPoint). */
 const BG_TYPES = FILL_TYPES.filter(([v]) => v !== "none");
 
 // ---------- gradient stops slider (PowerPoint Format-Background style) ----------
@@ -432,6 +455,24 @@ function TablePane({ table, theme, editingCell, tableSel, cm, updateNum }: {
   );
 }
 
+/** Collapsible settings group (remembers open/closed per id in localStorage). */
+function Acc({ id, title, defaultOpen, children }: { id: string; title: string; defaultOpen?: boolean; children: React.ReactNode }) {
+  const key = "pe.acc." + id;
+  const [open, setOpen] = useState(() => {
+    try { const v = localStorage.getItem(key); return v === null ? !!defaultOpen : v === "1"; } catch { return !!defaultOpen; }
+  });
+  const toggle = () => setOpen(o => { try { localStorage.setItem(key, o ? "0" : "1"); } catch { /* quota */ } return !o; });
+  return (
+    <div className={`acc ${open ? "open" : ""}`}>
+      <button type="button" className="acc-head" onClick={toggle}>
+        <span className="acc-chev">{open ? "▾" : "▸"}</span>
+        <span>{title}</span>
+      </button>
+      {open && <div className="acc-body">{children}</div>}
+    </div>
+  );
+}
+
 /** Set one pie-slice color override (null = automatic); collapses to undefined when all automatic. */
 function setSlice(sh: ChartShape, i: number, c: ColorRef | null): (ColorRef | null)[] | undefined {
   const arr = [...(sh.pointColors ?? sh.categories.map(() => null as ColorRef | null))];
@@ -442,7 +483,7 @@ function setSlice(sh: ChartShape, i: number, c: ColorRef | null): (ColorRef | nu
 
 type Pane = "slide" | "shape" | "image" | "table" | "chart" | null;
 
-/** OnlyOffice-style right settings: 40px icon rail + expandable pane, auto-activated by selection. */
+/** Right settings: 40px icon rail + expandable pane, auto-activated by selection. */
 export function RightPanel() {
   const state = useEditorState();
   const [open, setOpen] = useState<Pane>("slide");
@@ -540,13 +581,56 @@ export function RightPanel() {
                       />
                       <select
                         className="pane-select"
+                        title="Weight"
                         value={String(sp.line.widthPt)}
                         onChange={e => store.updateShapes([sp.id], s => s.kind === "sp" ? { ...s, line: { ...s.line, widthPt: parseFloat(e.target.value) } } : s)}
                       >
                         {[0.5, 1, 1.5, 2, 2.5, 3, 4.5, 6].map(w => <option key={w} value={String(w)}>{w} pt</option>)}
                       </select>
                     </div>
+                    <div className="pane-row" style={{ marginTop: 6 }}>
+                      <span className="pane-mini-label">Dashes</span>
+                      <select
+                        className="pane-select wide"
+                        value={sp.line.dash ?? "solid"}
+                        onChange={e => store.updateShapes([sp.id], s => s.kind === "sp" ? { ...s, line: { ...s.line, dash: e.target.value === "solid" ? undefined : e.target.value as LineDash } } : s)}
+                      >
+                        <option value="solid">───── Solid</option>
+                        <option value="dot">· · · · · Dotted</option>
+                        <option value="sysDot">‧‧‧‧‧ Fine dots</option>
+                        <option value="dash">– – – Dashed</option>
+                        <option value="dashDot">–·–·– Dash dot</option>
+                        <option value="lgDash">—  —  — Long dash</option>
+                        <option value="lgDashDot">—·—·— Long dash dot</option>
+                      </select>
+                    </div>
                   </div>
+                  {isLineGeom(sp.geom) && (
+                    <div className="pane-section">
+                      <div className="pane-label">Arrows</div>
+                      <div className="pane-row">
+                        <span className="pane-mini-label">Begin</span>
+                        <select className="pane-select" value={sp.line.headEnd?.type ?? "none"}
+                          onChange={e => setLineEnd(sp.id, "headEnd", e.target.value as ArrowKind)}>
+                          {ARROW_OPTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                        </select>
+                        <span className="pane-mini-label">End</span>
+                        <select className="pane-select" value={sp.line.tailEnd?.type ?? "none"}
+                          onChange={e => setLineEnd(sp.id, "tailEnd", e.target.value as ArrowKind)}>
+                          {ARROW_OPTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                        </select>
+                      </div>
+                      <div className="pane-row" style={{ marginTop: 6 }}>
+                        <span className="pane-mini-label">Size</span>
+                        <select className="pane-select wide" value={sp.line.headEnd?.len ?? sp.line.tailEnd?.len ?? "med"}
+                          onChange={e => setArrowSize(sp.id, e.target.value as "sm" | "med" | "lg")}>
+                          <option value="sm">Small</option>
+                          <option value="med">Medium</option>
+                          <option value="lg">Large</option>
+                        </select>
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
               {sp && sp.fill.kind === "solid" && (
@@ -691,6 +775,7 @@ export function RightPanel() {
           {open === "chart" && chart && (
             <>
               <div className="pane-title">Chart settings</div>
+              <Acc id="chart-type" title="Type &amp; options" defaultOpen>
               <div className="pane-section">
                 <div className="pane-label">Chart type</div>
                 <select
@@ -751,12 +836,14 @@ export function RightPanel() {
                   </>
                 )}
               </div>
+              </Acc>
+              <Acc id="chart-elements" title="Chart elements">
               <div className="pane-section">
-                <div className="pane-label">Chart elements</div>
                 <ChartElementsMenu chart={chart} />
               </div>
+              </Acc>
+              <Acc id="chart-area" title="Chart area &amp; gridlines">
               <div className="pane-section">
-                <div className="pane-label">Chart area</div>
                 <div className="pane-row">
                   <span className="pane-mini-label">Fill</span>
                   <InlineColor
@@ -826,9 +913,10 @@ export function RightPanel() {
                   </div>
                 )}
               </div>
+              </Acc>
               {["line", "scatter", "radar"].includes(chart.chart) && (
+                <Acc id="chart-series-lines" title="Series lines &amp; markers" defaultOpen>
                 <div className="pane-section">
-                  <div className="pane-label">Series lines &amp; markers</div>
                   <div className="pane-row">
                     <span className="pane-mini-label">Width</span>
                     <select
@@ -879,9 +967,10 @@ export function RightPanel() {
                     </div>
                   )}
                 </div>
+                </Acc>
               )}
+              <Acc id="chart-colors" title={["pie", "doughnut"].includes(chart.chart) ? "Slice colors" : "Series colors"} defaultOpen>
               <div className="pane-section">
-                <div className="pane-label">{["pie", "doughnut"].includes(chart.chart) ? "Slice colors" : "Series colors"}</div>
                 {["pie", "doughnut"].includes(chart.chart)
                   ? chart.categories.map((cat, i) => (
                     <div className="pane-row" key={i} style={{ marginTop: 4 }}>
@@ -912,28 +1001,40 @@ export function RightPanel() {
                     </div>
                   ))}
               </div>
+              </Acc>
+              <Acc id="chart-text" title="Text elements (title / axes / legend)" defaultOpen>
               <div className="pane-section">
-                <div className="pane-label">Chart text size (pt)</div>
-                <div className="pane-row">
-                  <input
-                    type="number" className="pane-num" min={5} max={40} step={0.5}
-                    value={chart.labelSizePt ?? 8.25}
-                    onChange={e => {
-                      const v = parseFloat(e.target.value);
-                      store.updateShapes([chart.id], s => s.kind === "chart"
-                        ? { ...s, labelSizePt: Number.isFinite(v) && v >= 5 && v <= 40 ? v : undefined }
-                        : s);
-                    }}
-                  />
-                  <button className="pane-btn sm" disabled={!chart.labelSizePt} onClick={() =>
-                    store.updateShapes([chart.id], s => s.kind === "chart" ? { ...s, labelSizePt: undefined } : s)
-                  }>Auto</button>
+                <div className="tbl-style-row" style={{ flexWrap: "wrap" }}>
+                  {([
+                    ["title", "Title", !!chart.title],
+                    ["axisTitleX", "X Title", !!chart.axisTitleX && !["pie", "doughnut", "radar"].includes(chart.chart)],
+                    ["axisTitleY", "Y Title", !!chart.axisTitleY && !["pie", "doughnut", "radar"].includes(chart.chart)],
+                    ["legend", "Legend", chart.legend],
+                    ["axisLabels", "Labels", !["pie", "doughnut", "radar"].includes(chart.chart)],
+                  ] as const).filter(([, , ok]) => ok).map(([part, label]) => (
+                    <button
+                      key={part}
+                      className={`pane-btn sm ${state.chartPartSel?.id === chart.id && state.chartPartSel.part === part ? "primary" : ""}`}
+                      onClick={() => store.setChartPart(chart.id, state.chartPartSel?.part === part && state.chartPartSel.id === chart.id ? null : part)}
+                    >{label}</button>
+                  ))}
                 </div>
+                {state.chartPartSel?.id === chart.id ? (
+                  <div className="pane-mini-label" style={{ marginTop: 6 }}>
+                    Use the <b>Home</b> tab (font, size, color, B/I/U) to format the selected element.
+                    <button className="pane-btn sm" style={{ marginLeft: 6 }} onClick={() => store.resetChartPart()}>Reset element</button>
+                  </div>
+                ) : (
+                  <div className="pane-mini-label" style={{ marginTop: 6 }}>Pick an element (or click it on the chart), then format it from the Home tab.</div>
+                )}
               </div>
+              </Acc>
+              <Acc id="chart-data" title="Data &amp; layout" defaultOpen>
               <div className="pane-section">
                 <button className="pane-btn" onClick={() => store.setState({ chartEditId: chart.id })}>Edit Data…</button>
               </div>
               <SizePos shape={chart} cm={cm} updateNum={updateNum} />
+              </Acc>
             </>
           )}
         </div>
@@ -1055,7 +1156,7 @@ function ChartElementsMenu({ chart }: { chart: ChartShape }) {
   );
 }
 
-/** OnlyOffice-style fill editor: type dropdown + per-type controls. */
+/** Fill editor: type dropdown + per-type controls. */
 function FillEditor({ sp, theme }: { sp: SpShape; theme: ColorTheme }) {
   return (
     <FillControls
@@ -1068,7 +1169,7 @@ function FillEditor({ sp, theme }: { sp: SpShape; theme: ColorTheme }) {
   );
 }
 
-/** OnlyOffice-style fill editor: type dropdown + per-kind controls. Drives shape fills and the slide background. */
+/** Fill editor: type dropdown + per-kind controls. Drives shape fills and the slide background. */
 function FillControls({ label, fill, setFill, setFillLive, theme, types = FILL_TYPES }: {
   label: string;
   fill: Fill;

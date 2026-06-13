@@ -1,7 +1,7 @@
-# Presentation Editor — Installation & Integration Guide (OnlyOffice Replacement)
+# Presentation Editor — Installation & Integration Guide
 
 > **Audience:** a developer or AI agent integrating this editor into a host web
-> application as a replacement for the OnlyOffice presentation editor. This
+> application (including as a replacement for a server-based slide editor). This
 > document is self-contained: everything needed to install, deploy, integrate,
 > and verify is here. No other context is required.
 
@@ -9,8 +9,8 @@
 
 ## 1. What this is
 
-A browser-based **PowerPoint (.pptx) editor** — a clean-room, presentation-only
-equivalent of the OnlyOffice editor with a native OOXML engine:
+A browser-based **PowerPoint (.pptx) editor** — a presentation-only slide editor
+with a native OOXML engine:
 
 - **100% client-side.** React 18 + TypeScript + Vite, compiled to static files.
   Opening, editing, rendering, and exporting `.pptx` all run in the user's
@@ -21,19 +21,19 @@ equivalent of the OnlyOffice editor with a native OOXML engine:
   colors/fonts, 187 preset shapes, freeforms, images incl. SVG icons, crops,
   tables with styles/merges, charts of 8 kinds, groups, speaker notes,
   gradients/patterns/picture fills, transitions subset).
-- **Editing features:** ribbon UI (OnlyOffice modern-light look), shapes
+- **Editing features:** ribbon UI (modern-light look), shapes
   gallery, text formatting, find & replace, tables (PowerPoint-style design
   gallery, cell merge, range selection), charts (data editor + formatting),
   image crop with handles, grouping (move/resize/rotate/flip as one), custom
   color palettes & font pairs, autosave with session recovery, present mode,
   rulers, undo/redo.
 
-### Consequences of the no-server architecture (vs OnlyOffice)
+### Consequences of the no-server architecture (vs a server-based editor)
 
-| | OnlyOffice | This editor |
+| | Typical server-based editor | This editor |
 |---|---|---|
-| Server component | Document Server (Node) required | None — static files only |
-| Concurrent users | Community edition caps at 20 connections | Unlimited (static hosting) |
+| Server component | Document server required | None — static files only |
+| Concurrent users | Often connection-capped per license | Unlimited (static hosting) |
 | Real-time co-editing | Yes | **No** — one editor per document at a time |
 | File formats | docx/xlsx/pptx + conversions | **pptx only** |
 | Deployment | Docker/server install | Any static host / CDN |
@@ -223,23 +223,28 @@ function saveDeck() {
 
 ---
 
-## 5. Migrating from OnlyOffice DocEditor config
+## 5. Migrating from a server-based document editor
 
-| OnlyOffice (`new DocsAPI.DocEditor(...)`) | This editor |
+If you're replacing a server-based slide editor (one configured via a
+`DocEditor`-style object with a document URL, a server callback URL, and event
+callbacks), here is the conceptual mapping:
+
+| Server-based DocEditor concept | This editor |
 |---|---|
-| `document.url` | `?file=` param or `pe:load { url }` |
-| `document.title` | `?title=` param or `pe:load { title }` |
-| `editorConfig.callbackUrl` (server POSTs file) | `?saveUrl=` (browser PUTs file) **or** `pe:document` event (host receives bytes) |
-| `events.onDocumentReady` | `pe:ready` (bridge up) + `pe:loaded` (document open) |
-| `events.onDocumentStateChange` | `pe:dirty` |
-| `downloadAs()` | `pe:save` → `pe:document` |
-| `documentType: "slide"` | implicit — this editor is presentations-only |
-| Document Server install / JWT secret | not needed — delete all of it |
+| document URL | `?file=` param or `pe:load { url }` |
+| document title | `?title=` param or `pe:load { title }` |
+| server callback URL (server POSTs the saved file) | `?saveUrl=` (browser PUTs the file) **or** the `pe:document` event (host receives the bytes) |
+| "document ready" event | `pe:ready` (bridge up) + `pe:loaded` (document open) |
+| "document state changed" event | `pe:dirty` |
+| download / export API | `pe:save` → `pe:document` |
+| document type = slides | implicit — this editor is presentations-only |
+| document server install / JWT secret | not needed — there's no server |
 
-Key behavioral difference: OnlyOffice saves **server-to-server** via
-`callbackUrl` after the user closes; this editor saves **from the browser**
-when the user clicks Save (or on `pe:save`). If you need autosave-to-storage,
-listen to `pe:dirty` and send `pe:save` on your own debounce.
+Key behavioral difference: a server-based editor typically saves
+**server-to-server** via its callback URL after the user closes; this editor
+saves **from the browser** when the user clicks Save (or on `pe:save`). If you
+need autosave-to-storage, listen to `pe:dirty` and send `pe:save` on your own
+debounce.
 
 ---
 
@@ -307,6 +312,44 @@ npm run dev
   (localStorage), not inside the file.
 
 ---
+
+## 7b. Fonts (self-hosted, bundled with the app)
+
+The editor ships a set of self-hosted fonts so decks render with the right
+typefaces regardless of what's installed on the viewer's machine. They're
+bundled at build time and lazy-loaded per glyph use (no upfront cost).
+
+**Add / refresh fonts** — drop `.ttf`/`.otf` files in a folder and run:
+```bash
+npm run fonts -- "D:\path\to\your\fonts"     # default: D:\Only  office fonts
+# then rebuild
+npm run build
+```
+The script (`scripts/install-fonts.mjs`):
+- copies Regular / Bold / Italic / BoldItalic (weight 400/700 × normal/italic)
+  for each **base** family into `public/fonts/`,
+- generates `public/fonts/fonts.css` (`@font-face`, `font-display: swap`),
+- writes `src/fonts/bundled.ts` (the family list merged into the font picker).
+
+Width variants (e.g. `*_Condensed`) are skipped by default; pass `--all-widths`
+to include them. The editor only distinguishes regular/bold and roman/italic,
+so other weights (Medium/SemiBold/…) aren't self-hosted.
+
+Currently bundled: Archivo, Exo, Google Sans, Jost, Lato, Metrophobic,
+Montserrat, Noto Sans, Playfair Display, Plus Jakarta Sans, Poppins, Roboto,
+Sora, Urbanist (~15 MB).
+
+> **Licensing:** most of these are SIL Open Font License (free to self-host).
+> **Google Sans is Google-proprietary** — confirm you have the right to
+> redistribute it before deploying publicly; to drop it, delete
+> `public/fonts/GoogleSans-*.ttf`, its `@font-face` lines, and its entry in
+> `src/fonts/bundled.ts` (or just re-run the script from a folder without it).
+> Google Sans alone is ~7.6 MB of the bundle.
+
+Fonts are referenced by name in the `.pptx` (PowerPoint uses the viewer's own
+installed copy / substitutes) — bundling here only governs in-editor rendering.
+Users can also load additional Google Fonts on the fly via Design → Fonts →
+Customize.
 
 ## 8. Releasing updates (how new versions reach the server)
 

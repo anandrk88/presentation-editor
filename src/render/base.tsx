@@ -1,10 +1,47 @@
 import React from "react";
-import type { ColorTheme, Fill, MediaItem, Paragraph, Run, Shape, TextBody } from "../model/types";
+import type { ArrowEnd, ArrowKind, ColorTheme, Fill, LineDash, MediaItem, Paragraph, Run, Shape, TextBody } from "../model/types";
 import { EMU_PER_PX, resolveColor, resolveFill, resolveFontName } from "../model/defaults";
 
 export const px = (emu: number) => emu / EMU_PER_PX;
 export const toEmu = (pxv: number) => Math.round(pxv * EMU_PER_PX);
 export const ptToPx = (pt: number) => (pt * 96) / 72;
+
+// dash patterns in multiples of the line width (PowerPoint scales dashes with weight)
+const DASH_UNITS: Partial<Record<LineDash, number[]>> = {
+  dot: [1, 2], sysDot: [1, 1.5], dash: [4, 3], dashDot: [4, 2, 1, 2],
+  lgDash: [8, 3], lgDashDot: [8, 2, 1, 2],
+};
+export function lineDashArray(dash: LineDash | undefined, widthPx: number): string | undefined {
+  const u = dash && DASH_UNITS[dash];
+  if (!u) return undefined;
+  return u.map(n => Math.max(0.5, n * Math.max(0.6, widthPx))).join(" ");
+}
+
+// ---- arrowheads (SVG markers; markerUnits=strokeWidth so they scale with weight) ----
+const ARROW_SIZE = { sm: 2.4, med: 3.8, lg: 5.6 } as const;
+function arrowShape(kind: ArrowKind, color: string): React.ReactNode {
+  switch (kind) {
+    case "triangle": return <path d="M0 1 L10 5 L0 9 Z" fill={color} />;
+    case "stealth": return <path d="M0 1 L10 5 L0 9 L3.4 5 Z" fill={color} />;
+    case "arrow": return <path d="M0.4 1 L10 5 L0.4 9 L3 5 Z" fill={color} />;
+    case "diamond": return <path d="M0 5 L5 1 L10 5 L5 9 Z" fill={color} />;
+    case "oval": return <circle cx="5" cy="5" r="4.2" fill={color} />;
+    default: return null;
+  }
+}
+/** A <marker> for one arrow end (auto-start-reverse so the same def serves start & end). */
+export function arrowMarker(id: string, end: ArrowEnd | undefined, color: string): React.ReactNode {
+  if (!end || end.type === "none") return null;
+  const len = ARROW_SIZE[end.len ?? "med"], w = ARROW_SIZE[end.w ?? "med"];
+  return (
+    <marker
+      id={id} viewBox="0 0 10 10" refX={9} refY={5}
+      markerWidth={len} markerHeight={w} orient="auto-start-reverse" markerUnits="strokeWidth"
+    >
+      {arrowShape(end.type, color)}
+    </marker>
+  );
+}
 
 export function shapeTransform(s: Shape): string {
   const x = px(s.x), y = px(s.y), w = px(s.w), h = px(s.h);

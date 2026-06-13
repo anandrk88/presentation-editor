@@ -1,4 +1,4 @@
-/* ===== ONLYOFFICE Presentation Editor look — modern Light theme =====
+/* ===== Presentation Editor look — modern Light theme =====
    White header with inline tabs (active = dark underline), 84px toolbar with
    4px-radius controls, 40px icon rails, 260px right settings, notes strip,
    28px statusbar. Brand terracotta #B75B44 kept for editor identity accents. */
@@ -264,6 +264,22 @@ body {
 .preview-fonts { flex-direction: column; align-items: flex-start; gap: 2px; background: var(--panel-bg); border-radius: 4px; padding: 8px 10px; }
 .theme-chip.add-chip .chip-name { color: var(--brand); font-weight: 600; }
 
+/* collapsible settings groups (accordion) */
+.acc { border-top: 1px solid var(--border-light); }
+.acc:last-child { border-bottom: 1px solid var(--border-light); }
+.acc-head {
+  width: 100%; display: flex; align-items: center; gap: 7px;
+  padding: 8px 2px; background: none; border: none; cursor: pointer;
+  font-size: 11px; font-weight: 600; color: var(--text); text-align: left;
+}
+.acc-head:hover { color: var(--brand); }
+.acc-chev { color: var(--text-secondary); font-size: 8px; width: 9px; display: inline-block; }
+.acc-head:hover .acc-chev { color: var(--brand); }
+.acc-body { padding: 0 0 8px; }
+/* inside an accordion the sections shouldn't re-pad at the top */
+.acc-body .pane-section { margin-top: 0; padding-top: 0; }
+.acc-body .pane-section:first-child { margin-top: 0; }
+
 /* gradient stops slider (PowerPoint Format-Background style) */
 .grad-bar-wrap { position: relative; height: 30px; margin: 4px 26px 0 2px; }
 .grad-checker, .grad-bar {
@@ -378,7 +394,7 @@ body {
 .chart-cat-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
 .chart-cell { min-height: 32px; }
 
-/* inline shape gallery in the toolbar (modern OnlyOffice) */
+/* inline shape gallery in the toolbar */
 .inline-shapes {
   display: flex; align-items: center; gap: 1px;
   border: 1px solid var(--border); border-radius: var(--radius);

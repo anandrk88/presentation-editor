@@ -55,6 +55,8 @@ export interface EditorState {
   tableSel: { id: string; r0: number; c0: number; r1: number; c1: number } | null;
   /** Chart whose data is being edited in the data dialog. */
   chartEditId: string | null;
+  /** Selected chart text element (title/axis/legend/labels) for per-element formatting. */
+  chartPartSel: { id: string; part: import("../model/types").ChartPart } | null;
   zoom: ZoomMode;
   presenting: boolean;
   presentIndex: number;
@@ -91,6 +93,7 @@ export class EditorStore {
     editingCell: null,
     tableSel: null,
     chartEditId: null,
+    chartPartSel: null,
     zoom: "fit",
     presenting: false,
     presentIndex: 0,
@@ -242,7 +245,51 @@ export class EditorStore {
   selectShapes(ids: string[], additive = false) {
     const cur = this.state.selection;
     const shapeIds = additive ? Array.from(new Set([...cur.shapeIds, ...ids])) : ids;
-    this.emit({ selection: { ...cur, shapeIds } });
+    // drop the chart-part selection if its chart is no longer the sole selection
+    const cp = this.state.chartPartSel;
+    const keepPart = cp && shapeIds.length === 1 && shapeIds[0] === cp.id ? cp : null;
+    this.emit({ selection: { ...cur, shapeIds }, chartPartSel: keepPart });
+  }
+
+  // ---------- chart part (per-element text) ----------
+  setChartPart(id: string, part: import("../model/types").ChartPart | null) {
+    this.emit({ chartPartSel: part ? { id, part } : null });
+  }
+
+  /** Merge a text-style patch into the selected chart part (prunes empties). */
+  formatChartPart(patch: Partial<import("../model/types").ChartTextStyle>) {
+    const cp = this.state.chartPartSel;
+    if (!cp) return;
+    this.updateShapes([cp.id], s => {
+      if (s.kind !== "chart") return s;
+      const cur = s.partStyles?.[cp.part] ?? {};
+      const merged: import("../model/types").ChartTextStyle = { ...cur, ...patch };
+      // prune undefined keys
+      (Object.keys(merged) as (keyof typeof merged)[]).forEach(k => merged[k] === undefined && delete merged[k]);
+      const partStyles = { ...s.partStyles, [cp.part]: merged };
+      if (!Object.keys(merged).length) delete partStyles[cp.part];
+      return { ...s, partStyles: Object.keys(partStyles).length ? partStyles : undefined };
+    });
+  }
+
+  /** Clear all formatting on the selected chart part. */
+  resetChartPart() {
+    const cp = this.state.chartPartSel;
+    if (!cp) return;
+    this.updateShapes([cp.id], s => {
+      if (s.kind !== "chart" || !s.partStyles) return s;
+      const partStyles = { ...s.partStyles };
+      delete partStyles[cp.part];
+      return { ...s, partStyles: Object.keys(partStyles).length ? partStyles : undefined };
+    });
+  }
+
+  /** Current style object for the selected chart part (or null). */
+  get chartPartStyle(): import("../model/types").ChartTextStyle | null {
+    const cp = this.state.chartPartSel;
+    if (!cp) return null;
+    const s = this.currentSlide?.shapes.find(sh => sh.id === cp.id);
+    return s?.kind === "chart" ? (s.partStyles?.[cp.part] ?? {}) : null;
   }
 
   addShape(shape: Shape, select = true) {
@@ -832,6 +879,14 @@ export class EditorStore {
     const next = this.withSlide(idx, sl => ({ ...sl, background: bg }));
     if (opts.historic === false) this.preview(next);
     else this.commit(next);
+  }
+
+  /** Swap a picture's media, keeping the frame (pos/size/geom) but resetting crop + svg tint. */
+  replacePicMedia(id: string, mediaId: string) {
+    this.updateShapes([id], s =>
+      s.kind === "pic" ? { ...s, mediaId, srcRect: undefined, svgTint: undefined } : s);
+    this.setStatus("Image replaced");
+    setTimeout(() => this.setStatus(null), 1500);
   }
 
   applyBgToAll() {

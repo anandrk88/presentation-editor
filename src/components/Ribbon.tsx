@@ -69,17 +69,30 @@ export function Ribbon({ onOpenFile, onSave, onPresent, onImportPattern }: {
     return undefined;
   })();
   const firstPara: Paragraph | undefined = selSps[0]?.text?.paragraphs[0];
-  const hasTextTarget = editingShapeId !== null || selSps.length > 0 || hasTable;
+  // chart text-element selection routes Home-tab font controls to that part
+  const chartPart = state.chartPartSel;
+  const chartPartStyle = chartPart ? store.chartPartStyle : null;
+  const partDefaultSize = (): number => {
+    if (!chartPart) return 18;
+    if (chartPart.part === "title") return 14;
+    if (chartPart.part === "axisTitleX" || chartPart.part === "axisTitleY") return 9;
+    const ch = selShapes.find(s => s.id === chartPart.id);
+    return (ch?.kind === "chart" && ch.labelSizePt) || 10;
+  };
+
+  const hasTextTarget = editingShapeId !== null || selSps.length > 0 || hasTable || !!chartPart;
   const hasSel = selShapes.length > 0;
 
   // ---------- text formatting (live execCommand while editing, model ops otherwise) ----------
   const toggleRunProp = (prop: "bold" | "italic" | "underline" | "strike", cmd: string) => {
+    if (chartPart && prop !== "strike") { store.formatChartPart({ [prop]: !(chartPartStyle?.[prop]) || undefined }); return; }
     if (editingShapeId) { editorBus.exec(cmd); return; }
     const cur = firstRun?.[prop] ?? false;
     store.formatRuns(r => ({ ...r, [prop]: !cur || undefined }));
   };
 
   const setFont = (font: string) => {
+    if (chartPart) { store.formatChartPart({ font }); return; }
     if (isThemeFont(font)) {
       // theme refs are model-level — commit any open editor, then apply to the shape
       withCommitted(ids => store.formatRuns(r => ({ ...r, font }), ids));
@@ -91,11 +104,13 @@ export function Ribbon({ onOpenFile, onSave, onPresent, onImportPattern }: {
 
   const setSize = (sizePt: number) => {
     if (!sizePt || Number.isNaN(sizePt)) return;
+    if (chartPart) { store.formatChartPart({ sizePt }); return; }
     if (editingShapeId) { execFontSize(sizePt); return; }
     store.formatRuns(r => ({ ...r, sizePt }));
   };
 
   const bumpSize = (dir: 1 | -1) => {
+    if (chartPart) { setSize(Math.max(5, Math.min(96, partDefaultSize() + dir))); return; }
     if (editingShapeId) return; // keep simple while editing
     store.formatRuns(r => {
       const i = FONT_SIZES.findIndex(s => s >= r.sizePt);
@@ -107,6 +122,7 @@ export function Ribbon({ onOpenFile, onSave, onPresent, onImportPattern }: {
   };
 
   const setTextColor = (c: ColorRef) => {
+    if (chartPart) { store.formatChartPart({ color: c }); return; }
     if (editingShapeId) { editorBus.exec("foreColor", resolveColor(c, theme)); return; }
     store.formatRuns(r => ({ ...r, color: c }));
   };
@@ -235,8 +251,10 @@ export function Ribbon({ onOpenFile, onSave, onPresent, onImportPattern }: {
     </>
   );
 
-  const fontFace = firstRun?.font ?? "Arial";
-  const fontSize = firstRun?.sizePt ?? 18;
+  // effective formatting source: chart part when one is selected, else the first run
+  const fmtRef = chartPart ? chartPartStyle : firstRun;
+  const fontFace = chartPart ? (chartPartStyle?.font ?? MINOR_FONT) : (firstRun?.font ?? "Arial");
+  const fontSize = chartPart ? (chartPartStyle?.sizePt ?? partDefaultSize()) : (firstRun?.sizePt ?? 18);
 
   const FontGroup = (
     <div className="tb-group tb-col">
@@ -273,9 +291,9 @@ export function Ribbon({ onOpenFile, onSave, onPresent, onImportPattern }: {
         </Dropdown>
       </div>
       <div className="tb-row">
-        <button className={`tb-btn sm ${firstRun?.bold ? "active" : ""}`} title="Bold (Ctrl+B)" disabled={!hasTextTarget} onClick={() => toggleRunProp("bold", "bold")}><Icon name="bold" size={16} /></button>
-        <button className={`tb-btn sm ${firstRun?.italic ? "active" : ""}`} title="Italic (Ctrl+I)" disabled={!hasTextTarget} onClick={() => toggleRunProp("italic", "italic")}><Icon name="italic" size={16} /></button>
-        <button className={`tb-btn sm ${firstRun?.underline ? "active" : ""}`} title="Underline (Ctrl+U)" disabled={!hasTextTarget} onClick={() => toggleRunProp("underline", "underline")}><Icon name="underline" size={16} /></button>
+        <button className={`tb-btn sm ${fmtRef?.bold ? "active" : ""}`} title="Bold (Ctrl+B)" disabled={!hasTextTarget} onClick={() => toggleRunProp("bold", "bold")}><Icon name="bold" size={16} /></button>
+        <button className={`tb-btn sm ${fmtRef?.italic ? "active" : ""}`} title="Italic (Ctrl+I)" disabled={!hasTextTarget} onClick={() => toggleRunProp("italic", "italic")}><Icon name="italic" size={16} /></button>
+        <button className={`tb-btn sm ${fmtRef?.underline ? "active" : ""}`} title="Underline (Ctrl+U)" disabled={!hasTextTarget} onClick={() => toggleRunProp("underline", "underline")}><Icon name="underline" size={16} /></button>
         <button className={`tb-btn sm ${firstRun?.strike ? "active" : ""}`} title="Strikethrough" disabled={!hasTextTarget} onClick={() => toggleRunProp("strike", "strikeThrough")}><Icon name="strike" size={16} /></button>
         <button className={`tb-btn sm ${(firstRun?.baseline ?? 0) > 0 ? "active" : ""}`} title="Superscript" disabled={!hasTextTarget} onClick={() => toggleBaseline(30, "superscript")}><Icon name="superscript" size={16} /></button>
         <button className={`tb-btn sm ${(firstRun?.baseline ?? 0) < 0 ? "active" : ""}`} title="Subscript" disabled={!hasTextTarget} onClick={() => toggleBaseline(-25, "subscript")}><Icon name="subscript" size={16} /></button>
@@ -286,7 +304,7 @@ export function Ribbon({ onOpenFile, onSave, onPresent, onImportPattern }: {
         />
         <ColorButton
           theme={theme} icon="fontColor" title="Font color" disabled={!hasTextTarget}
-          currentHex={firstRun ? resolveColor(firstRun.color, theme) : "#000"}
+          currentHex={fmtRef?.color ? resolveColor(fmtRef.color, theme) : "#000"}
           onPick={setTextColor}
         />
         <button className="tb-btn sm" title="Clear formatting" disabled={!hasTextTarget} onClick={clearFormatting}><Icon name="eraser" size={16} /></button>
@@ -642,10 +660,6 @@ export function Ribbon({ onOpenFile, onSave, onPresent, onImportPattern }: {
   return (
     <div className="ribbon">
       <div className="header-bar">
-        <div className="logo" title="Presentation Editor">
-          <svg width="20" height="20" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="#B75B44" /><text x="16" y="22" fontFamily="Arial" fontSize="17" fontWeight="bold" fill="#fff" textAnchor="middle">P</text></svg>
-          <span className="logo-word">PRESENTATION</span>
-        </div>
         <div className="tab-strip">
           {TABS.map(t => (
             <button
@@ -667,7 +681,6 @@ export function Ribbon({ onOpenFile, onSave, onPresent, onImportPattern }: {
         <button className="present-btn" title="Start slideshow (F5)" onClick={() => onPresent(true)}>
           <Icon name="present" size={12} /> Present
         </button>
-        <div className="avatar" title="anandrk88@gmail.com">A</div>
       </div>
       <div className="toolbar">
         {tab === "home" && HomePanel}
@@ -718,7 +731,7 @@ function slideBgHex(state: ReturnType<typeof store.getState>): string {
   return "#FFFFFF";
 }
 
-// ---------- shape gallery (full ECMA-376 preset library, categorized like OnlyOffice) ----------
+// ---------- shape gallery (full ECMA-376 preset library, categorized like PowerPoint) ----------
 const RECENT_KEY = "recentShapes";
 function getRecentShapes(): string[] {
   try {
@@ -768,7 +781,7 @@ function CategorizedShapePanel({ onPick, close }: { onPick: (g: PresetGeom) => v
   );
 }
 
-/** Inline two-row mini gallery (modern OnlyOffice keeps it right in the toolbar) + chevron for the full panel. */
+/** Inline two-row mini gallery (kept right in the toolbar) + chevron for the full panel. */
 function InlineShapeGallery({ onPick }: { onPick: (g: PresetGeom) => void }) {
   const recent = getRecentShapes();
   const inline = [...recent, ...SHAPE_GALLERY.map(s => s.geom).filter(g => !recent.includes(g))].slice(0, 14);
@@ -1012,7 +1025,7 @@ function FileMenu({ onClose, onOpenFile, onSave, onImportPattern }: { onClose: (
           <div className="file-div" />
           <div className="file-about">
             <b>Presentation Editor</b>
-            <p>A browser-based OOXML (PresentationML) slide editor inspired by the open-source ONLYOFFICE presentation editor. Files open and save as standard .pptx packages compatible with PowerPoint, LibreOffice and ONLYOFFICE.</p>
+            <p>A browser-based slide editor. Files open and save as standard .pptx presentations.</p>
           </div>
         </div>
       </div>

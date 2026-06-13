@@ -1,11 +1,12 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { PicShape, Shape, SpShape, TableShape } from "../model/types";
+import type { ChartShape, PicShape, Shape, SpShape, TableShape } from "../model/types";
 import { EMU_PER_PX, makeShape, makeTextBox } from "../model/defaults";
 import { isLineGeom, presetPath } from "../render/geometry";
 import { SlideSVG, px, shapeTransform } from "../render/SlideView";
-import { tableGrid } from "../render/GraphicViews";
+import { chartPartRegions, tableGrid } from "../render/GraphicViews";
 import { store } from "../state/store";
 import { useEditorState } from "../state/useStore";
+import { loadImageFile, loadImageFromUrl } from "../util/loadImage";
 import { TextEditOverlay } from "./TextEditOverlay";
 
 type HandleId = "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw";
@@ -153,6 +154,16 @@ export function EditorCanvas() {
     if (pendingShape) {
       dragRef.current = { kind: "draw", start: p, geom: pendingShape };
       setGhost({ x: p.x, y: p.y, w: 0, h: 0 });
+      return;
+    }
+
+    // chart text-element selection: clicking a part region (over a selected chart)
+    // selects it for per-element formatting (Home tab + chart pane)
+    const partEl = target.closest("[data-chart-part]");
+    if (partEl) {
+      const cid = partEl.getAttribute("data-chart-id")!;
+      const part = partEl.getAttribute("data-chart-part") as import("../model/types").ChartPart;
+      store.setChartPart(cid, part);
       return;
     }
 
@@ -548,6 +559,26 @@ export function EditorCanvas() {
     return { row, col, nearEdge };
   };
 
+  // ---------- replace image (file / url) ----------
+  const replaceInputRef = useRef<HTMLInputElement>(null);
+  const replaceTarget = useRef<string | null>(null);
+  const replaceFromFile = (picId: string) => {
+    replaceTarget.current = picId;
+    replaceInputRef.current?.click();
+  };
+  const replaceFromUrl = async (picId: string) => {
+    const url = window.prompt("Image URL (must allow cross-origin access):", "https://");
+    if (!url || url.trim() === "https://") return;
+    try {
+      store.setStatus("Fetching image…");
+      const { mediaId } = await loadImageFromUrl(url.trim());
+      store.replacePicMedia(picId, mediaId);
+    } catch (err) {
+      store.setStatus(null);
+      alert("Could not load image: " + (err as Error).message);
+    }
+  };
+
   // right-click: select what's under the cursor and show object/canvas actions
   const onContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -766,6 +797,27 @@ export function EditorCanvas() {
               })}
             </g>
           )}
+          {/* chart text-element overlay: clickable part regions + highlight for the selected part */}
+          {single && single.kind === "chart" && !editingShapeId && (
+            <g transform={shapeTransform(single)}>
+              {chartPartRegions(single as ChartShape).map(r => {
+                const sel = state.chartPartSel?.id === single.id && state.chartPartSel.part === r.part;
+                return (
+                  <rect
+                    key={r.part}
+                    data-chart-part={r.part}
+                    data-chart-id={single.id}
+                    x={r.x} y={r.y} width={r.w} height={r.h}
+                    fill={sel ? "rgba(43,87,151,0.12)" : "transparent"}
+                    stroke={sel ? "#2B5797" : "none"}
+                    strokeWidth={sel ? 1 / zoom : 0}
+                    strokeDasharray={sel ? `${3 / zoom} ${2 / zoom}` : undefined}
+                    style={{ cursor: "text" }}
+                  />
+                );
+              })}
+            </g>
+          )}
           {/* crop mode chrome: ghosted full image, pan surface, frame + black crop handles */}
           {cropShape && (() => {
             const g = cropGeom(cropShape);
@@ -925,6 +977,13 @@ export function EditorCanvas() {
               {store.selectionHasGroup && (
                 <button className="menu-item" onClick={() => { store.ungroupSelection(); setCtxMenu(null); }}>Ungroup</button>
               )}
+              {slide.shapes.find(s => s.id === ctxMenu.shapeId)?.kind === "pic" && (
+                <>
+                  <button className="menu-item" onClick={() => { replaceFromFile(ctxMenu.shapeId!); setCtxMenu(null); }}>Replace Image (from file)…</button>
+                  <button className="menu-item" onClick={() => { replaceFromUrl(ctxMenu.shapeId!); setCtxMenu(null); }}>Replace Image (from URL)…</button>
+                  <div className="menu-div" />
+                </>
+              )}
               {(selection.shapeIds.length > 1 || store.selectionHasGroup) && <div className="menu-div" />}
               <button className="menu-item" onClick={() => { store.copySelection(); store.deleteSelectedShapes(); setCtxMenu(null); }}>Cut</button>
               <button className="menu-item" onClick={() => { store.copySelection(); setCtxMenu(null); }}>Copy</button>
@@ -948,6 +1007,25 @@ export function EditorCanvas() {
           )}
         </div>
       )}
+      <input
+        ref={replaceInputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/gif,image/svg+xml,image/webp,image/bmp"
+        style={{ display: "none" }}
+        onChange={async e => {
+          const f = e.target.files?.[0];
+          e.target.value = "";
+          const id = replaceTarget.current;
+          replaceTarget.current = null;
+          if (!f || !id) return;
+          try {
+            const { mediaId } = await loadImageFile(f);
+            store.replacePicMedia(id, mediaId);
+          } catch (err) {
+            alert("Could not load image: " + (err as Error).message);
+          }
+        }}
+      />
     </div>
   );
 
