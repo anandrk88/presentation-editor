@@ -66,6 +66,14 @@ function SpView({ shape, theme, media, hideText, showPrompts, defsPrefix }: { sh
     strokeWidth: widthPx,
     strokeDasharray: lineDashArray(shape.line.dash, widthPx),
   };
+  // a custPath is drawn in its own coordinate space and scaled into the shape box.
+  // Pre-divide the stroke by that scale so the outline renders at widthPx in slide
+  // space AND scales with zoom — a non-scaling-stroke would stay a fixed screen
+  // width and look ~5× too bold in small thumbnails.
+  const cp = shape.custPath;
+  const cpScaleX = cp ? (Math.max(w, 0.01) / cp.w) || 1 : 1;
+  const cpScaleY = cp ? (Math.max(h, 0.01) / cp.h) || 1 : 1;
+  const cpStrokeW = widthPx / (Math.sqrt(cpScaleX * cpScaleY) || 1);
   // arrowheads (line/connector shapes): per-shape markers colored to the stroke
   const hd = shape.line.headEnd, tl = shape.line.tailEnd;
   const hasArrows = stroke !== "none" && ((hd && hd.type !== "none") || (tl && tl.type !== "none"));
@@ -77,13 +85,14 @@ function SpView({ shape, theme, media, hideText, showPrompts, defsPrefix }: { sh
     <g transform={shapeTransform(shape)}>
       {fillDef && <defs>{fillDef}</defs>}
       {hasArrows && <defs>{arrowMarker(headId, hd, stroke)}{arrowMarker(tailId, tl, stroke)}</defs>}
-      {shape.custPath ? (
+      {cp ? (
         <path
-          d={shape.custPath.d}
-          transform={`scale(${(Math.max(w, 0.01) / shape.custPath.w) || 1} ${(Math.max(h, 0.01) / shape.custPath.h) || 1})`}
+          d={cp.d}
+          transform={`scale(${cpScaleX} ${cpScaleY})`}
           fill={fill}
-          vectorEffect="non-scaling-stroke"
-          {...strokeProps}
+          stroke={stroke}
+          strokeWidth={cpStrokeW}
+          strokeDasharray={lineDashArray(shape.line.dash, cpStrokeW)}
         />
       ) : (
         (presetPaths(shape.geom, Math.max(w, 0.5), Math.max(h, 0.5), shape.adj) ?? [{ d: `M0 0H${w}V${h}H0Z`, noFill: false, noStroke: false }]).map((p, i) => (
