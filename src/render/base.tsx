@@ -136,6 +136,9 @@ export function runStyle(r: Run, theme: ColorTheme): React.CSSProperties {
     color: resolveColor(r.color, theme),
     backgroundColor: r.highlight ? resolveColor(r.highlight, theme) : undefined,
     verticalAlign: r.baseline ? `${r.baseline}%` : undefined,
+    // a:rPr@cap — display only (the underlying text keeps its case)
+    textTransform: r.caps === "all" ? "uppercase" : undefined,
+    fontVariant: r.caps === "small" ? "small-caps" : undefined,
     whiteSpace: "pre-wrap",
   };
 }

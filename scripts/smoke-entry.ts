@@ -346,6 +346,8 @@ export async function runSmoke(patternJson?: string): Promise<{ zipBytes: Uint8A
     runs[0].text = "E = mc";
     runs.push({ text: "2", sizePt: 18, font: "Arial", color: { kind: "scheme", slot: "dk1" }, baseline: 30 });
     runs.push({ text: " marked", sizePt: 18, font: "Arial", color: { kind: "scheme", slot: "dk1" }, highlight: { kind: "srgb", hex: "FFFF00" } });
+    runs.push({ text: " loud", sizePt: 18, font: "Arial", color: { kind: "scheme", slot: "dk1" }, caps: "all" });
+    runs.push({ text: " small", sizePt: 18, font: "Arial", color: { kind: "scheme", slot: "dk1" }, caps: "small" });
     tb.text!.columns = 2;
     tb.text!.colSpacing = 360000;
 
@@ -362,6 +364,8 @@ export async function runSmoke(patternJson?: string): Promise<{ zipBytes: Uint8A
     const rRuns = rtb.text!.paragraphs[0].runs;
     ok(rRuns.some(r => r.baseline === 30), "text: superscript baseline round-trip");
     ok(rRuns.some(r => r.highlight && r.highlight.kind === "srgb" && r.highlight.hex === "FFFF00"), "text: highlight round-trip");
+    ok(rRuns.some(r => r.caps === "all"), "text: ALL CAPS (cap=all) round-trip");
+    ok(rRuns.some(r => r.caps === "small"), "text: small caps (cap=small) round-trip");
     const rCharts = s6.shapes.filter((s): s is ChartShape => s.kind === "chart");
     ok(rCharts.find(c => c.chart === "column")?.grouping === "percentStacked", "chart: percentStacked grouping survives");
     const rScatter = rCharts.find(c => c.chart === "scatter");

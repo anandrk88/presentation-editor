@@ -90,6 +90,7 @@ function runPrXml(r: Run, tag: "a:rPr" | "a:endParaRPr"): string {
     r.underline ? `u="sng"` : "",
     r.strike ? `strike="sngStrike"` : "",
     r.baseline ? `baseline="${Math.round(r.baseline * 1000)}"` : "",
+    r.caps ? `cap="${r.caps}"` : "",
     `dirty="0"`,
   ].filter(Boolean).join(" ");
   const highlight = r.highlight ? `<a:highlight>${colorXml(r.highlight)}</a:highlight>` : "";

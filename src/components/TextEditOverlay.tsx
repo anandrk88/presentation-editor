@@ -195,6 +195,15 @@ function highlightOf(cs: CSSStyleDeclaration): { kind: "srgb"; hex: string } | u
   return { kind: "srgb", hex: rgbToHex(bg) };
 }
 
+/** Recover the a:rPr@cap effect from the run span's computed style (display only). */
+function capsOf(cs: CSSStyleDeclaration): "all" | "small" | undefined {
+  if (cs.textTransform === "uppercase") return "all";
+  // fontVariantCaps is the reliable longhand; fall back to the fontVariant shorthand
+  const fv = (cs as CSSStyleDeclaration & { fontVariantCaps?: string }).fontVariantCaps ?? cs.fontVariant;
+  if (fv && fv.includes("small-caps")) return "small";
+  return undefined;
+}
+
 function parseEditedDom(root: HTMLElement, body: TextBody | undefined, theme: ColorTheme, seedRun?: Run): Paragraph[] {
   const origParas = body?.paragraphs ?? [];
   // index original runs (keyed by their RESOLVED style) so theme color refs and
@@ -277,6 +286,7 @@ function parseEditedDom(root: HTMLElement, body: TextBody | undefined, theme: Co
           strike: strike || undefined,
           baseline: baselineOf(cs),
           highlight: highlightOf(cs),
+          caps: capsOf(cs),
           color,
         });
       } else if (n.nodeType === 1) {
@@ -303,6 +313,7 @@ function sameStyle(a: Run, b: Run): boolean {
   return a.font === b.font && a.sizePt === b.sizePt && !!a.bold === !!b.bold && !!a.italic === !!b.italic &&
     !!a.underline === !!b.underline && !!a.strike === !!b.strike &&
     (a.baseline ?? 0) === (b.baseline ?? 0) &&
+    (a.caps ?? "") === (b.caps ?? "") &&
     JSON.stringify(a.highlight ?? null) === JSON.stringify(b.highlight ?? null) &&
     JSON.stringify(a.color) === JSON.stringify(b.color);
 }

@@ -78,6 +78,8 @@ export interface Run {
   baseline?: number;
   /** Text highlight color (a:highlight). */
   highlight?: ColorRef;
+  /** Caps effect (a:rPr@cap): "all" = ALL CAPS, "small" = small caps — display only, text unchanged. */
+  caps?: "all" | "small";
   sizePt: number;
   font: string;
   color: ColorRef;

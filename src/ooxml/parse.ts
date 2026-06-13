@@ -307,7 +307,7 @@ function parseAdj(prstGeom: Element | null): Record<string, number> | undefined 
 }
 
 // ---------- text ----------
-interface TextDefaults { sizePt: number; font: string; color: ColorRef; align?: Paragraph["align"]; bullet?: boolean; bold?: boolean; italic?: boolean }
+interface TextDefaults { sizePt: number; font: string; color: ColorRef; align?: Paragraph["align"]; bullet?: boolean; bold?: boolean; italic?: boolean; caps?: "all" | "small" }
 
 /** One inheritance layer of default run properties (a:defRPr). */
 interface LevelDefault {
@@ -316,6 +316,7 @@ interface LevelDefault {
   italic?: boolean;
   color?: ColorRef;
   font?: string;
+  caps?: "all" | "small";
 }
 /** Per indent level (0-8), from a:lstStyle / p:txStyles. */
 type LstDefaults = (LevelDefault | undefined)[];
@@ -334,6 +335,8 @@ function parseDefRPrEl(el: Element | null): LevelDefault | undefined {
   if (c) out.color = c;
   const latin = attr(kid(el, "latin"), "typeface");
   if (latin) out.font = latin;
+  const cap = attr(el, "cap");
+  if (cap === "all" || cap === "small") out.caps = cap;
   return Object.keys(out).length ? out : undefined;
 }
 
@@ -377,6 +380,9 @@ function parseRunProps(rPr: Element | null, dflt: TextDefaults, theme: ThemeFont
   const highlightEl = kid(rPr, "highlight");
   const bAttr = attr(rPr, "b");
   const iAttr = attr(rPr, "i");
+  // explicit run cap wins; "none" clears; otherwise inherit from the defRPr chain
+  const capAttr = attr(rPr, "cap");
+  const caps = capAttr === "all" || capAttr === "small" ? capAttr : capAttr === "none" ? undefined : dflt.caps;
   return {
     sizePt: sz ? sz / 100 : dflt.sizePt,
     font,
@@ -388,6 +394,7 @@ function parseRunProps(rPr: Element | null, dflt: TextDefaults, theme: ThemeFont
     strike: (strikeVal && strikeVal !== "noStrike") || undefined,
     baseline: baselineRaw ? baselineRaw / 1000 : undefined,
     highlight: highlightEl ? parseColorChoice(highlightEl) ?? undefined : undefined,
+    caps,
   };
 }
 
@@ -432,6 +439,7 @@ function parseTxBody(txBody: Element | null, dflt: TextDefaults, theme: ThemeFon
       bullet: dflt.bullet,
       bold: pDef?.bold ?? lvlDef?.bold ?? dflt.bold,
       italic: pDef?.italic ?? lvlDef?.italic ?? dflt.italic,
+      caps: pDef?.caps ?? lvlDef?.caps ?? dflt.caps,
     };
 
     const runs: Run[] = [];
