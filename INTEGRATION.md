@@ -270,12 +270,17 @@ await call("setImage", logoId, "https://cdn.example.com/logo.png");
 
 Methods (read): `getDocument`, `getSlides`, `getActiveSlide`, `getSlide`,
 `getSelection`, `getElement`, `getElements`. Methods (write, undoable, mark
-dirty): `selectSlide`, `selectElement`, `clearSelection`, `setText`,
-`setElementProperties`, `setFillColor`, `setImage`, `deleteElement`, `undo`,
-`redo`. Geometry is in EMU with a `px` companion. Writes target the **active
-slide** — `selectSlide(i)` first to edit another. See
-[docs/13](docs/13-scripting-api.md) for the data shapes, every signature, events,
-and recipes.
+dirty): element ops `setText`, `setElementProperties`, `setFillColor`,
+`setImage`, `deleteElement`, `reorderElement`; slide/doc ops `addSlide`,
+`duplicateSlide`, `deleteSlide`, `moveSlide`, `setDocumentTitle`, `applyTheme`,
+`setSlideBackgroundColor`; insert ops `insertText`, `insertShape`,
+`insertImage`, `insertChart`, `insertTable`; content ops `setTableCell`,
+`setChartData`, `setParagraphStyle`, `setTextStyle`; plus `selectSlide`,
+`selectElement`, `undo`, `redo`. Export ops (return a `Blob`):
+`exportSlidePNG`, `exportPDF`, `exportPNGZip`. Geometry is in EMU with a `px` companion.
+Element/insert ops target the **active slide** — `selectSlide(i)` first to edit
+another. See [docs/13](docs/13-scripting-api.md) for the data shapes, every
+signature, events, and recipes.
 
 ---
 

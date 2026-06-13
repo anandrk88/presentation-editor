@@ -68,7 +68,8 @@ src/
   components/           ribbon, canvas, panels, dialogs (the UI layer)
   util/
     embed.ts            host-app integration (URL config + postMessage bridge, incl. pe:invoke)
-    api.ts              public scripting API (window.presentationEditor): read/mutate slides, elements, text, images, fills
+    api.ts              public scripting API (window.presentationEditor): read/mutate/insert slides, elements, text, images, fills; export
+    export.tsx          slide → PNG / multi-page PDF / PNG-zip (offscreen render → canvas, lazy jsPDF)
     autosave.ts         IndexedDB snapshot save/restore
     custom.ts           user palettes + font pairs (localStorage), Google-font loading
     loadImage.ts        image ingest (file / URL), SVG normalize + PNG fallback

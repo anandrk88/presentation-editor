@@ -1005,6 +1005,29 @@ function ChartIcon() {
   );
 }
 
+/** Render slides to PDF / PNG and download (export.tsx + jsPDF load on demand). */
+async function runExport(kind: "pdf" | "png" | "pngzip", onClose: () => void) {
+  onClose();
+  try {
+    store.setStatus("Exporting…");
+    const ex = await import("../util/export");
+    const pres = store.pres;
+    const base = (pres.title || "Presentation").replace(/[^\w.-]+/g, "_") || "Presentation";
+    if (kind === "pdf") {
+      ex.downloadBlob(await ex.exportPdfBlob(pres, store.media), `${base}.pdf`);
+    } else if (kind === "pngzip") {
+      ex.downloadBlob(await ex.exportPngZipBlob(pres, store.media), `${base}-slides.zip`);
+    } else {
+      const i = store.getState().selection.slideIndex;
+      ex.downloadBlob(await ex.slideToPngBlob(pres, pres.slides[i], store.media), `${base}-slide-${i + 1}.png`);
+    }
+    store.setStatus("Exported");
+    setTimeout(() => store.setStatus(null), 2500);
+  } catch (e) {
+    store.setStatus("Export failed: " + (e as Error).message);
+  }
+}
+
 function FileMenu({ onClose, onOpenFile, onSave, onImportPattern }: { onClose: () => void; onOpenFile: () => void; onSave: () => void; onImportPattern: () => void }) {
   return (
     <div className="file-overlay" onClick={onClose}>
@@ -1014,6 +1037,16 @@ function FileMenu({ onClose, onOpenFile, onSave, onImportPattern }: { onClose: (
           <button className="file-item" onClick={() => { onSave(); onClose(); }}>
             <Icon name="save" size={18} /> Download as… <span className="file-hint">.pptx</span>
           </button>
+          <button className="file-item" onClick={() => runExport("pdf", onClose)}>
+            <Icon name="doc" size={18} /> Export as PDF <span className="file-hint">.pdf</span>
+          </button>
+          <button className="file-item" onClick={() => runExport("png", onClose)}>
+            <Icon name="image" size={18} /> Export current slide <span className="file-hint">.png</span>
+          </button>
+          <button className="file-item" onClick={() => runExport("pngzip", onClose)}>
+            <Icon name="image" size={18} /> Export all slides <span className="file-hint">.png .zip</span>
+          </button>
+          <div className="file-div" />
           <button className="file-item" onClick={() => { onOpenFile(); onClose(); }}>
             <Icon name="open" size={18} /> Open… <span className="file-hint">.pptx</span>
           </button>

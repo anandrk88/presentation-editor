@@ -1,7 +1,7 @@
 {
   "name": "presentation-editor",
   "private": true,
-  "version": "2.4.0",
+  "version": "2.5.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -12,6 +12,7 @@
     "release": "npm version patch && git push && git push --tags"
   },
   "dependencies": {
+    "jspdf": "^4.2.1",
     "jszip": "^3.10.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"

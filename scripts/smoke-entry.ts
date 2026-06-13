@@ -914,6 +914,45 @@ export async function runSmoke(patternJson?: string): Promise<{ zipBytes: Uint8A
     ok(editorApi.deleteElement(imgEl!.id) === true, "api: deleteElement returns true");
     ok(editorApi.getElement(imgEl!.id) === null && editorApi.getActiveSlide().elements?.length === 2, "api: deleted element is gone");
     ok(editorApi.setFillColor("does-not-exist", "#000000") === false, "api: mutating a missing id returns false");
+
+    // —— structural ops ——
+    const slidesBefore = editorApi.getDocument().slideCount;
+    const newIdx = editorApi.addSlide({ layout: "blank" });
+    ok(editorApi.getDocument().slideCount === slidesBefore + 1 && editorApi.getDocument().activeSlideIndex === newIdx, "api: addSlide grows the deck + activates it");
+
+    const tId = editorApi.insertText({ text: "Inserted", x: 100000, y: 100000, w: 3000000, h: 800000 });
+    ok(editorApi.getElement(tId)?.text === "Inserted", "api: insertText adds a text box");
+    const shId = editorApi.insertShape("hexagon", { fillColor: "#00FF00" });
+    ok(editorApi.getElement(shId)?.kind === "shape" && (editorApi.getElement(shId)?.fill as { color?: string }).color?.toUpperCase() === "#00FF00", "api: insertShape with fill color");
+    const cId = editorApi.insertChart("bar", { categories: ["A", "B"], series: [{ name: "S", values: [3, 7] }] });
+    const chEl = editorApi.getElement(cId);
+    ok(chEl?.kind === "chart" && chEl.chart?.categories.join() === "A,B" && chEl.chart?.series[0].values.join() === "3,7", "api: insertChart with data");
+    const tblId = editorApi.insertTable(2, 2);
+    ok(editorApi.getElement(tblId)?.table?.rows === 2, "api: insertTable adds a table");
+    ok(editorApi.setTableCell(tblId, 0, 1, "Hi") === true && editorApi.getElement(tblId)?.table?.cells[0][1] === "Hi", "api: setTableCell updates a cell");
+
+    ok(editorApi.setChartData(cId, { series: [{ name: "S", values: [9, 9] }] }) === true && editorApi.getElement(cId)?.chart?.series[0].values.join() === "9,9", "api: setChartData replaces values");
+
+    editorApi.setTextStyle(tId, { bold: true, sizePt: 40 });
+    ok(editorApi.getElement(tId)?.paragraphs?.[0].runs[0].bold === true && editorApi.getElement(tId)?.paragraphs?.[0].runs[0].sizePt === 40, "api: setTextStyle bolds/sizes runs");
+    editorApi.setParagraphStyle(tId, { align: "ctr" });
+    ok(editorApi.getElement(tId)?.paragraphs?.[0].align === "ctr", "api: setParagraphStyle aligns");
+
+    const orderBefore = editorApi.getActiveSlide().elements!.map(e => e.id);
+    editorApi.reorderElement(tId, "front");
+    const orderAfter = editorApi.getActiveSlide().elements!.map(e => e.id);
+    ok(orderAfter[orderAfter.length - 1] === tId && orderAfter.length === orderBefore.length, "api: reorderElement brings to front");
+
+    editorApi.setDocumentTitle("Renamed Deck");
+    ok(editorApi.getDocument().title === "Renamed Deck", "api: setDocumentTitle");
+    editorApi.applyTheme({ accent1: "#ABCDEF" });
+    ok(editorApi.getDocument().palette.accent1.toUpperCase() === "#ABCDEF", "api: applyTheme recolors a scheme slot");
+
+    const cnt = editorApi.getDocument().slideCount;
+    editorApi.duplicateSlide();
+    ok(editorApi.getDocument().slideCount === cnt + 1, "api: duplicateSlide");
+    editorApi.deleteSlide();
+    ok(editorApi.getDocument().slideCount === cnt, "api: deleteSlide");
   }
 
   return { zipBytes, report };

@@ -21,10 +21,16 @@
  * mirrors the editor's own model. To edit another slide, selectSlide(i) first.
  */
 import { store } from "../state/store";
-import { EMU_PER_INCH, EMU_PER_PT, EMU_PER_PX, resolveColor, resolveFontName } from "../model/defaults";
+import {
+  EMU_PER_INCH, EMU_PER_PT, EMU_PER_PX, MINOR_FONT,
+  makeChart, makeShape, makeTable, makeTextBox, nextId,
+  resolveColor, resolveFontName,
+} from "../model/defaults";
 import { loadImageFromUrl } from "./loadImage";
+import type { LayoutKind } from "../model/defaults";
 import type {
-  ChartShape, ColorRef, Fill, PicShape, Run, Shape, SpShape, TableShape, TextAlign, TextBody,
+  BulletKind, ChartKind, ChartShape, ColorRef, Fill, PicShape, PresetGeom, Run, SchemeSlot,
+  Shape, SpShape, TableShape, TextAlign, TextBody,
 } from "../model/types";
 
 // ----------------------------- serialized shapes -----------------------------
@@ -265,12 +271,32 @@ function normalizeHex(hex: string): string | null {
 /** A run to clone styling from when (re)building a text body. */
 function templateRun(body: TextBody | undefined): Run {
   const r = body?.paragraphs.flatMap(p => p.runs)[0];
-  return r ? { ...r } : { text: "", sizePt: 18, font: "+mn-lt", color: { kind: "scheme", slot: "dk1" } };
+  return r ? { ...r } : { text: "", sizePt: 18, font: MINOR_FONT, color: { kind: "scheme", slot: "dk1" } };
 }
 
 const EMPTY_BODY = (): TextBody => ({
   paragraphs: [], anchor: "t", wrap: true, insets: [91440, 45720, 91440, 45720],
 });
+
+/** Box geometry for inserts (EMU). Omitted fields fall back to a centered default. */
+export interface InsertBox { x?: number; y?: number; w?: number; h?: number }
+export interface InsertTextOpts extends InsertBox { text?: string }
+export interface InsertShapeOpts extends InsertBox { fillColor?: string }
+export interface SeriesInput { name?: string; values: number[] }
+export interface InsertChartOpts extends InsertBox { categories?: string[]; series?: SeriesInput[] }
+export interface ChartData { categories?: string[]; series?: SeriesInput[] }
+export interface ParagraphStyle { align?: TextAlign; bullet?: BulletKind; level?: number }
+export interface TextStyle { bold?: boolean; italic?: boolean; underline?: boolean; strike?: boolean; sizePt?: number; font?: string; color?: string }
+
+/** Resolve insert geometry: explicit EMU, else a centered default box. */
+function placeBox(o: InsertBox, dw: number, dh: number): { x: number; y: number; w: number; h: number } {
+  const w = Math.max(1, Math.round(o.w ?? dw)), h = Math.max(1, Math.round(o.h ?? dh));
+  return {
+    w, h,
+    x: Math.round(o.x ?? (store.pres.slideWidth - w) / 2),
+    y: Math.round(o.y ?? (store.pres.slideHeight - h) / 2),
+  };
+}
 
 // ----------------------------- the API ---------------------------------------
 
@@ -290,7 +316,7 @@ export interface PresentationEditorApi {
   getElement(id: string): ElementInfo | null;
   getElements(): ElementInfo[];
 
-  // —— write (undoable; marks the doc dirty) ——
+  // —— write: element properties (active slide; undoable; marks the doc dirty) ——
   selectSlide(index: number): void;
   selectElement(idOrIds: string | string[]): void;
   clearSelection(): void;
@@ -301,6 +327,34 @@ export interface PresentationEditorApi {
   deleteElement(id: string): boolean;
   undo(): void;
   redo(): void;
+
+  // —— write: slides & document ——
+  addSlide(opts?: { layout?: LayoutKind; index?: number }): number;     // returns the new slide index
+  duplicateSlide(index?: number): number;                               // returns the new slide index
+  deleteSlide(index?: number): void;
+  moveSlide(from: number, to: number): void;
+  setDocumentTitle(title: string): void;
+  applyTheme(palette: Partial<Record<SchemeSlot, string>>): void;       // recolor theme scheme slots
+  setSlideBackgroundColor(hex: string): boolean;                        // active slide
+
+  // —— write: insert new elements (active slide; each returns the new element id) ——
+  insertText(opts?: InsertTextOpts): string;
+  insertShape(geom: PresetGeom, opts?: InsertShapeOpts): string;
+  insertImage(urlOrDataUrl: string, opts?: InsertBox): Promise<string>;
+  insertChart(chartType: ChartKind, opts?: InsertChartOpts): string;
+  insertTable(rows: number, cols: number, opts?: InsertBox): string;
+
+  // —— write: element content & style ——
+  setTableCell(id: string, row: number, col: number, text: string): boolean;
+  setChartData(id: string, data: ChartData): boolean;
+  setParagraphStyle(id: string, style: ParagraphStyle): boolean;
+  setTextStyle(id: string, style: TextStyle): boolean;
+  reorderElement(id: string, dir: "front" | "back" | "forward" | "backward"): boolean;
+
+  // —— export (renders slides to images; the renderer & jsPDF load on demand) ——
+  exportSlidePNG(index?: number, opts?: { scale?: number }): Promise<Blob>;   // default: active slide
+  exportPDF(opts?: { scale?: number }): Promise<Blob>;                        // whole deck, one slide per page
+  exportPNGZip(opts?: { scale?: number }): Promise<Blob>;                     // every slide as a PNG, zipped
 
   // —— events ——
   on(event: ApiEvent, handler: (payload: unknown) => void): () => void;
@@ -422,6 +476,142 @@ function buildApi(): PresentationEditorApi {
     undo() { store.undo(); },
     redo() { store.redo(); },
 
+    // —— slides & document ——
+    addSlide(opts = {}) {
+      // store.addSlide inserts AFTER `after`; map a desired index to after = index-1
+      const after = opts.index !== undefined ? opts.index - 1 : undefined;
+      store.addSlide(opts.layout ?? "titleContent", after);
+      return store.getState().selection.slideIndex;
+    },
+    duplicateSlide(index) { store.duplicateSlide(index); return store.getState().selection.slideIndex; },
+    deleteSlide(index) { store.deleteSlide(index); },
+    moveSlide(from, to) { store.moveSlide(from, to); },
+    setDocumentTitle(title) { store.commit({ ...store.pres, title: String(title) }); },
+    applyTheme(palette) {
+      const theme = { ...store.pres.theme };
+      for (const [slot, hex] of Object.entries(palette)) {
+        const h = hex && normalizeHex(hex);
+        if (h && slot in theme) (theme as unknown as Record<string, string>)[slot] = h;
+      }
+      store.commit({ ...store.pres, theme });
+    },
+    setSlideBackgroundColor(hex) {
+      const h = normalizeHex(hex);
+      if (!h) return false;
+      store.updateSlideBg({ kind: "solid", color: { kind: "srgb", hex: h } });
+      return true;
+    },
+
+    // —— insert new elements ——
+    insertText(opts = {}) {
+      const b = placeBox(opts, 4_000_000, 1_000_000);
+      const s = makeTextBox(b.x, b.y, b.w, b.h, opts.text ?? "");
+      store.addShape(s);
+      return s.id;
+    },
+    insertShape(geom, opts = {}) {
+      const b = placeBox(opts, 2_000_000, 2_000_000);
+      const s = makeShape(geom, b.x, b.y, b.w, b.h);
+      const h = opts.fillColor && normalizeHex(opts.fillColor);
+      if (h) s.fill = { kind: "solid", color: { kind: "srgb", hex: h } };
+      store.addShape(s);
+      return s.id;
+    },
+    async insertImage(urlOrDataUrl, opts = {}) {
+      const { mediaId, natW, natH } = await loadImageFromUrl(urlOrDataUrl);
+      let w = opts.w ?? natW * EMU_PER_PX, h = opts.h ?? natH * EMU_PER_PX;
+      if (opts.w === undefined && opts.h === undefined) {
+        const k = Math.min(1, store.pres.slideWidth * 0.5 / w, store.pres.slideHeight * 0.5 / h);
+        w *= k; h *= k;
+      }
+      const b = placeBox({ ...opts, w, h }, w, h);
+      const s: PicShape = { kind: "pic", id: nextId("pic"), name: "Image", mediaId, x: b.x, y: b.y, w: b.w, h: b.h, rot: 0 };
+      store.addShape(s);
+      return s.id;
+    },
+    insertChart(chartType, opts = {}) {
+      const b = placeBox(opts, 5_000_000, 3_000_000);
+      const s = makeChart(chartType, b.x, b.y, b.w, b.h);
+      if (opts.categories) s.categories = opts.categories.map(String);
+      if (opts.series) s.series = opts.series.map((se, i) => ({ name: String(se.name ?? `Series ${i + 1}`), values: (se.values ?? []).map(Number) }));
+      store.addShape(s);
+      return s.id;
+    },
+    insertTable(rows, cols, opts = {}) {
+      const r = Math.max(1, Math.round(rows)), c = Math.max(1, Math.round(cols));
+      const b = placeBox(opts, 5_000_000, r * 600_000);
+      const s = makeTable(r, c, b.x, b.y, b.w, b.h);
+      store.addShape(s);
+      return s.id;
+    },
+
+    // —— element content & style ——
+    setTableCell(id, row, col, text) {
+      const s = findOnActive(id);
+      if (!s || s.kind !== "table") return false;
+      if (row < 0 || col < 0 || row >= s.cells.length || col >= (s.cells[0]?.length ?? 0)) return false;
+      store.updateShapes([id], sh => {
+        if (sh.kind !== "table") return sh;
+        const cells = sh.cells.map(rw => rw.map(cl => ({ ...cl })));
+        const cell = cells[row][col];
+        const tmpl = templateRun(cell.text);
+        cell.text = { ...cell.text, paragraphs: String(text).split("\n").map(line => ({ runs: [{ ...tmpl, text: line }], align: "l" as TextAlign, bullet: "none" as const, level: 0 })) };
+        return { ...sh, cells };
+      });
+      return true;
+    },
+    setChartData(id, data) {
+      const s = findOnActive(id);
+      if (!s || s.kind !== "chart") return false;
+      store.updateShapes([id], sh => {
+        if (sh.kind !== "chart") return sh;
+        const next = { ...sh };
+        if (data.categories) next.categories = data.categories.map(String);
+        if (data.series) next.series = data.series.map((se, i) => ({ name: String(se.name ?? sh.series[i]?.name ?? `Series ${i + 1}`), values: (se.values ?? []).map(Number), color: sh.series[i]?.color }));
+        return next;
+      });
+      return true;
+    },
+    setParagraphStyle(id, style) {
+      if (!findOnActive(id)) return false;
+      store.formatParagraphs(p => ({ ...p, align: style.align ?? p.align, bullet: style.bullet ?? p.bullet, level: style.level ?? p.level }), [id]);
+      return true;
+    },
+    setTextStyle(id, style) {
+      if (!findOnActive(id)) return false;
+      const colorHex = style.color ? normalizeHex(style.color) : null;
+      store.formatRuns(r => ({
+        ...r,
+        bold: style.bold ?? r.bold, italic: style.italic ?? r.italic,
+        underline: style.underline ?? r.underline, strike: style.strike ?? r.strike,
+        sizePt: style.sizePt ?? r.sizePt, font: style.font ?? r.font,
+        color: colorHex ? { kind: "srgb", hex: colorHex } : r.color,
+      }), [id]);
+      return true;
+    },
+    reorderElement(id, dir) {
+      if (!findOnActive(id)) return false;
+      store.reorderShape(id, dir);
+      return true;
+    },
+
+    // —— export (export.tsx pulls in the renderer + jsPDF only when called) ——
+    async exportSlidePNG(index, opts) {
+      const i = index ?? store.getState().selection.slideIndex;
+      const slide = store.pres.slides[i];
+      if (!slide) throw new Error(`slide index ${i} out of range`);
+      const { slideToPngBlob } = await import("./export");
+      return slideToPngBlob(store.pres, slide, store.media, opts);
+    },
+    async exportPDF(opts) {
+      const { exportPdfBlob } = await import("./export");
+      return exportPdfBlob(store.pres, store.media, opts);
+    },
+    async exportPNGZip(opts) {
+      const { exportPngZipBlob } = await import("./export");
+      return exportPngZipBlob(store.pres, store.media, opts);
+    },
+
     on(event, handler) {
       listeners[event].add(handler);
       return () => listeners[event].delete(handler);
@@ -438,6 +628,10 @@ export const API_METHODS = [
   "getDocument", "getSlides", "getActiveSlide", "getSlide", "getSelection", "getElement", "getElements",
   "selectSlide", "selectElement", "clearSelection",
   "setText", "setElementProperties", "setFillColor", "setImage", "deleteElement", "undo", "redo",
+  "addSlide", "duplicateSlide", "deleteSlide", "moveSlide", "setDocumentTitle", "applyTheme", "setSlideBackgroundColor",
+  "insertText", "insertShape", "insertImage", "insertChart", "insertTable",
+  "setTableCell", "setChartData", "setParagraphStyle", "setTextStyle", "reorderElement",
+  "exportSlidePNG", "exportPDF", "exportPNGZip",
 ] as const;
 
 /** Install the API as a global so same-origin hosts can reach it. */

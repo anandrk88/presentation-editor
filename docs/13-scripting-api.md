@@ -191,6 +191,8 @@ see [09 · Integration](09-integration.md)).
 > editor's own model). To change an element on another slide, call
 > `selectSlide(i)` first. Reads (`getSlide`) work on any slide.
 
+### Selection, element properties & history
+
 | Method | Returns | Effect |
 |---|---|---|
 | `selectSlide(index)` | void | Make slide `index` active (clears element selection). |
@@ -201,7 +203,76 @@ see [09 · Integration](09-integration.md)).
 | `setFillColor(id, hex)` | `boolean` | Solid-fill a shape. `hex` accepts `"#RRGGBB"`, `"RRGGBB"`, or `"RGB"`. `false` if not a shape or the hex is invalid. |
 | `setImage(id, urlOrDataUrl)` | `Promise<boolean>` | Replace a picture's image from an http(s) URL or a `data:` URL (CORS must allow it). Keeps the frame; resets crop/tint. `false` if `id` isn't an image. |
 | `deleteElement(id)` | `boolean` | Remove an element from the active slide. |
+| `reorderElement(id, dir)` | `boolean` | Z-order: `dir` is `"front"`, `"back"`, `"forward"`, or `"backward"`. |
 | `undo()` / `redo()` | void | Step the history. |
+
+### Slides & document
+
+| Method | Returns | Effect |
+|---|---|---|
+| `addSlide(opts?)` | `number` | Insert a slide and return its index. `opts`: `{ layout?, index? }` — `layout` is `"title"`, `"titleContent"`, `"sectionHeader"`, `"twoContent"`, `"titleOnly"`, or `"blank"` (default `"titleContent"`); `index` is where to insert (default: after the active slide). The new slide becomes active. |
+| `duplicateSlide(index?)` | `number` | Copy a slide (default: active) and return the new index. |
+| `deleteSlide(index?)` | void | Remove a slide (default: active). Never drops below one slide. |
+| `moveSlide(from, to)` | void | Reorder slides. |
+| `setDocumentTitle(title)` | void | Rename the presentation (used as the export file name). |
+| `applyTheme(palette)` | void | Recolor theme scheme slots — `palette` maps any of `dk1, lt1, dk2, lt2, accent1…accent6, hlink, folHlink` to a hex. Theme-referenced colors across the deck update at once. |
+| `setSlideBackgroundColor(hex)` | `boolean` | Solid background on the active slide. |
+
+### Insert new elements
+
+Each adds to the **active slide**, selects it, and returns the new element id.
+`opts` carries an optional box `{ x, y, w, h }` in EMU; omit it for a centered default.
+
+| Method | Returns | Effect |
+|---|---|---|
+| `insertText(opts?)` | `string` | New text box. `opts.text` seeds the content. |
+| `insertShape(geom, opts?)` | `string` | New preset shape (`geom`: `"rect"`, `"ellipse"`, `"hexagon"`, `"star5"`, …). `opts.fillColor` sets a solid fill. |
+| `insertImage(urlOrDataUrl, opts?)` | `Promise<string>` | New picture from a URL / `data:` URL (CORS applies). Sized to its natural aspect if no box is given. |
+| `insertChart(chartType, opts?)` | `string` | New chart (`chartType`: `"column"`, `"bar"`, `"line"`, `"pie"`, `"doughnut"`, `"area"`, `"scatter"`, `"radar"`). `opts.categories` / `opts.series: [{ name?, values }]` seed the data. |
+| `insertTable(rows, cols, opts?)` | `string` | New `rows × cols` table. |
+
+### Element content & style
+
+| Method | Returns | Effect |
+|---|---|---|
+| `setTableCell(id, row, col, text)` | `boolean` | Set a cell's text (0-based; `"\n"` splits lines). `false` if out of range or not a table. |
+| `setChartData(id, data)` | `boolean` | Replace a chart's `{ categories?, series? }` (`series: [{ name?, values }]`). |
+| `setParagraphStyle(id, style)` | `boolean` | Apply to all paragraphs: `{ align?, bullet?, level? }`. |
+| `setTextStyle(id, style)` | `boolean` | Apply to all runs: `{ bold?, italic?, underline?, strike?, sizePt?, font?, color? }` (`color` is a hex). |
+
+---
+
+## Export — PDF & PNG
+
+Render slides to images entirely in the browser. Each returns a `Blob` (the
+renderer and jsPDF load on demand, so they never weigh down the main bundle).
+
+| Method | Returns | Output |
+|---|---|---|
+| `exportSlidePNG(index?, opts?)` | `Promise<Blob>` | One slide as a PNG (default: the active slide). |
+| `exportPDF(opts?)` | `Promise<Blob>` | The whole deck as a multi-page PDF, one slide per page. |
+| `exportPNGZip(opts?)` | `Promise<Blob>` | Every slide as a PNG, bundled into one `.zip`. |
+
+`opts.scale` (default `2`) is device-px per slide-px — raise it for print-grade
+output, lower it for smaller files. (A 13.3″ 16:9 slide is 1280×720 slide-px, so
+scale 2 → a 2560×1440 PNG.)
+
+```js
+// same-origin: download a PDF
+const blob = await api.exportPDF();
+const url = URL.createObjectURL(blob);
+Object.assign(document.createElement("a"), { href: url, download: "deck.pdf" }).click();
+
+// cross-origin: the Blob comes back through pe:result
+const pdf = await call("exportPDF");          // a Blob
+```
+
+The editor's own **File → Export as PDF / PNG** menu items call these.
+
+> **Font note.** Text is rasterized with whatever font the browser has for each
+> family. System/common families render exactly; an exotic bundled family the
+> export can't see falls back — the same substitution PowerPoint does for a
+> missing font. Geometry, fills, images, charts and tables are pixel-exact.
 
 ---
 
@@ -279,14 +350,16 @@ console.log(slide.elements.map(e => `${e.kind}: ${e.text ?? e.name}`));
 
 - **Ids are stable within a session** but are regenerated when a deck is loaded
   or duplicated — don't persist them across documents.
-- **Writes are active-slide-scoped** (see above). Reads are not.
-- `setImage` fetches the URL in the browser — the host (R2/S3/CDN) must send
-  permissive **CORS** headers, exactly like opening a `?file=` document.
-- For **structural** edits the API doesn't cover yet (add slide, insert a new
-  shape/chart/table, edit table cells, change chart data), drive the document via
-  `pe:load`/`pe:save` round-trips, or open an issue — the surface is designed to
-  grow. The internal store ([`src/state/store.ts`](../src/state/store.ts)) has
-  the full method set these wrap.
+- **Writes (element & insert ops) are active-slide-scoped** (see above). Reads,
+  and slide/document ops (`addSlide`, `moveSlide`, `applyTheme`, …), are not.
+- `setImage` / `insertImage` fetch the URL in the browser — the host (R2/S3/CDN)
+  must send permissive **CORS** headers, exactly like opening a `?file=` document.
+- `setTextStyle` / `setParagraphStyle` apply to **every** run / paragraph of the
+  shape. For per-run edits, drive the deck via `pe:load`/`pe:save` round-trips.
+- Not yet wrapped: cell merge/insert-row-col, group/ungroup, per-slice chart
+  colors, transitions. The internal store
+  ([`src/state/store.ts`](../src/state/store.ts)) has the full method set these
+  wrap — the surface is designed to grow.
 
 See also: [09 · Integration & embedding](09-integration.md) ·
 [INTEGRATION.md](../INTEGRATION.md) (the full host-app guide).
