@@ -78,10 +78,10 @@ export function Ribbon({ onOpenFile, onSave, onPresent, onImportPattern }: {
   const chartPartStyle = chartPart ? store.chartPartStyle : null;
   const partDefaultSize = (): number => {
     if (!chartPart) return 18;
-    if (chartPart.part === "title") return 14;
-    if (chartPart.part === "axisTitleX" || chartPart.part === "axisTitleY") return 9;
+    if (chartPart.part === "title") return 16;
     const ch = selShapes.find(s => s.id === chartPart.id);
-    return (ch?.kind === "chart" && ch.labelSizePt) || 10;
+    // legend / axis labels / axis titles all default to the chart label size (12pt)
+    return (ch?.kind === "chart" && ch.labelSizePt) || 12;
   };
 
   const hasTextTarget = editingShapeId !== null || selSps.length > 0 || hasTable || !!chartPart;

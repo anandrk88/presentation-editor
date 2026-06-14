@@ -823,6 +823,21 @@ export function RightPanel() {
                   <input type="checkbox" checked={chart.legend} onChange={e => store.updateShapes([chart.id], s => s.kind === "chart" ? { ...s, legend: e.target.checked } : s)} />
                   Show legend
                 </label>
+                {chart.legend && (
+                  <div style={{ margin: "6px 0 2px" }}>
+                    <div className="pane-label">Legend position</div>
+                    <select
+                      className="pane-select wide"
+                      value={chart.legendPos ?? "r"}
+                      onChange={e => store.updateShapes([chart.id], s => s.kind === "chart" ? { ...s, legendPos: e.target.value as ChartShape["legendPos"] } : s)}
+                    >
+                      <option value="r">Right</option>
+                      <option value="b">Bottom</option>
+                      <option value="l">Left</option>
+                      <option value="t">Top</option>
+                    </select>
+                  </div>
+                )}
                 {(chart.chart === "line" || chart.chart === "scatter") && (
                   <>
                     <label className="pane-check">

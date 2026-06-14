@@ -166,7 +166,7 @@ export function ChartView({ shape, theme, defsPrefix = "c" }: { shape: ChartShap
   // chart-wide text size override (axis labels, legend, category names)
   const LABEL_STYLE: React.CSSProperties = {
     ...BASE_LABEL_STYLE,
-    fontSize: shape.labelSizePt ? ptToPx(shape.labelSizePt) : 11,
+    fontSize: shape.labelSizePt ? ptToPx(shape.labelSizePt) : ptToPx(12), // chart default: 12pt
   };
   // per-element style: merge a part's overrides over a fallback base style
   const partCss = (part: ChartPart, fallback: React.CSSProperties): React.CSSProperties => {
@@ -213,8 +213,10 @@ export function ChartView({ shape, theme, defsPrefix = "c" }: { shape: ChartShap
     : undefined;
   const gridsOn = !shape.hideGridlines;
   const gridStroke = shape.gridColor ? resolveColor(shape.gridColor, theme) : GRID_CLR;
+  // no chart-space outline unless the host/user sets one (PowerPoint has none by default)
   const chartStrokeOff = shape.chartBorder?.fill.kind === "none";
-  const chartStroke = shape.chartBorder && !chartStrokeOff ? resolveFill(shape.chartBorder.fill, theme) : "#E0E0E0";
+  const hasChartBorder = !!shape.chartBorder && !chartStrokeOff;
+  const chartStroke = hasChartBorder ? resolveFill(shape.chartBorder!.fill, theme) : "none";
   const seriesLineW = (s: { lineWidthPt?: number }, fallback: number) =>
     s.lineWidthPt ? ptToPx(s.lineWidthPt) : fallback;
   const markerR = (fallback: number) => (shape.markerSizePt ? ptToPx(shape.markerSizePt) / 2 : fallback);
@@ -245,8 +247,8 @@ export function ChartView({ shape, theme, defsPrefix = "c" }: { shape: ChartShap
       <rect
         width={w} height={h}
         fill={shape.chartFill ? (shape.chartFill.kind === "none" ? "none" : bgPaint) : "#FFFFFF"}
-        stroke={chartStrokeOff ? "none" : chartStroke}
-        strokeWidth={shape.chartBorder ? ptToPx(shape.chartBorder.widthPt) : 1}
+        stroke={chartStroke}
+        strokeWidth={hasChartBorder ? ptToPx(shape.chartBorder!.widthPt) : 0}
         strokeDasharray={dashArray(shape.chartBorder?.dash)}
       />
       {!plain && (shape.plotFill || shape.plotBorder) && (
@@ -259,7 +261,7 @@ export function ChartView({ shape, theme, defsPrefix = "c" }: { shape: ChartShap
         />
       )}
       {shape.title && (
-        <text x={w / 2} y={16} textAnchor="middle" style={partCss("title", { ...LABEL_STYLE, fontSize: 14, fill: "#404040" })}>{shape.title}</text>
+        <text x={w / 2} y={18} textAnchor="middle" style={partCss("title", { ...LABEL_STYLE, fontSize: ptToPx(16), fill: "#404040" })}>{shape.title}</text>
       )}
       {shape.axisTitleX && !plain && (
         <text x={ox + pw / 2} y={h - (legendPos === "b" ? 24 : 5)} textAnchor="middle" style={partCss("axisTitleX", { ...LABEL_STYLE, fill: "#595959" })}>{shape.axisTitleX}</text>
@@ -492,29 +494,35 @@ export function ChartView({ shape, theme, defsPrefix = "c" }: { shape: ChartShap
 
       {legendPos && (() => {
         const items = legendItems.slice(0, 12);
+        const fontPx = typeof LEGEND.fontSize === "number" ? LEGEND.fontSize : 12;
+        // chars that fit a text budget at this font (~0.58em average glyph width)
+        const fit = (budgetPx: number) => Math.max(1, Math.floor(budgetPx / (fontPx * 0.58)));
+        const swatch = 9, gap = 4;
         if (legendPos === "t" || legendPos === "b") {
-          const itemW = 86;
-          const total = items.length * itemW;
-          const x0 = Math.max(6, (w - total) / 2);
-          const y = legendPos === "t" ? titleH + 10 : h - 9 - (xTitleH ? 0 : 0);
+          // shrink each slot to fit the chart width — never overflow the bounds
+          const itemW = Math.min(112, (w - 12) / items.length);
+          const x0 = Math.max(6, (w - itemW * items.length) / 2);
+          const y = legendPos === "t" ? titleH + 10 : h - 8;
           return (
             <g transform={`translate(${x0} ${y})`}>
               {items.map((it, i) => (
                 <g key={i} transform={`translate(${i * itemW} 0)`}>
-                  <rect width={9} height={9} y={-8} fill={it.color} />
-                  <text x={13} y={0} style={LEGEND}>{truncate(it.label, 10)}</text>
+                  <rect width={swatch} height={swatch} y={-swatch} fill={it.color} />
+                  <text x={swatch + gap} y={0} style={LEGEND}>{truncate(it.label, fit(itemW - swatch - gap - 2))}</text>
                 </g>
               ))}
             </g>
           );
         }
-        const x = legendPos === "l" ? 8 : w - 96 + 8;
+        const boxW = 96;
+        const x = legendPos === "l" ? 8 : w - boxW + 8;
+        const rowH = Math.max(16, fontPx + 5);
         return (
           <g transform={`translate(${x} ${oy + 6})`}>
             {items.map((it, i) => (
-              <g key={i} transform={`translate(0 ${i * 16})`}>
-                <rect width={9} height={9} y={-8} fill={it.color} />
-                <text x={13} y={0} style={LEGEND}>{truncate(it.label, 12)}</text>
+              <g key={i} transform={`translate(0 ${i * rowH})`}>
+                <rect width={swatch} height={swatch} y={-swatch} fill={it.color} />
+                <text x={swatch + gap} y={0} style={LEGEND}>{truncate(it.label, fit(boxW - swatch - gap - 8))}</text>
               </g>
             ))}
           </g>
