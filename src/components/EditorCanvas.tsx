@@ -528,12 +528,9 @@ export function EditorCanvas() {
           return b.x1 < m.x + m.w && b.x2 > m.x && b.y1 < m.y + m.h && b.y2 > m.y;
         }).map(s => s.id);
         store.selectShapes(store.expandToGroups(hitIds), drag.additive);
-      } else if (!drag.additive) {
-        // a plain click on empty canvas (no drag, no shift) advances to the next
-        // slide — deselect already happened on pointer-down; Esc clears selection
-        const idx = store.getState().selection.slideIndex;
-        if (idx < pres.slides.length - 1) store.selectSlide(idx + 1);
       }
+      // a plain click on empty canvas just deselects (handled on pointer-down) —
+      // it does NOT advance slides; use the arrow keys / slide panel to navigate
       return;
     }
 
