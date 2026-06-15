@@ -181,10 +181,6 @@ export function Ribbon({ onOpenFile, onSave, onPresent, onImportPattern }: {
 
   const changeCase = (label: string) => withCommitted(ids => store.transformText(CASE_FNS[label], ids));
 
-  /** Non-destructive caps effect (a:rPr@cap): toggles the run's display case. */
-  const setCaps = (mode: "all" | "small") =>
-    withCommitted(ids => store.formatRuns(r => ({ ...r, caps: r.caps === mode ? undefined : mode }), ids));
-
   const bumpIndent = (d: 1 | -1) => withCommitted(ids => {
     store.formatParagraphs(p => ({ ...p, level: Math.max(0, Math.min(8, p.level + d)) }), ids);
   });
@@ -294,10 +290,6 @@ export function Ribbon({ onOpenFile, onSave, onPresent, onImportPattern }: {
               {Object.keys(CASE_FNS).map(label => (
                 <button key={label} className="menu-item" onClick={() => { changeCase(label); close(); }}>{label}</button>
               ))}
-              <div className="menu-div" />
-              {/* non-destructive caps effect (a:rPr@cap) — text is unchanged, only displayed uppercase */}
-              <button className="menu-item" onClick={() => { setCaps("all"); close(); }}><span style={{ width: 12 }}>{firstRun?.caps === "all" ? "✓" : ""}</span> ALL CAPS</button>
-              <button className="menu-item" onClick={() => { setCaps("small"); close(); }}><span style={{ width: 12 }}>{firstRun?.caps === "small" ? "✓" : ""}</span> Small caps</button>
             </div>
           )}
         </Dropdown>
