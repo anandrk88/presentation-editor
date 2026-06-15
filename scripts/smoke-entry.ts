@@ -4,7 +4,7 @@ import { buildPptx } from "../src/ooxml/write";
 import { PARSE_LIMITS, parsePptx, setDOMParser, setXMLSerializer } from "../src/ooxml/parse";
 import { store } from "../src/state/store";
 import { editorApi } from "../src/util/api";
-import { parsePermissions, parseUIConfig, permissions } from "../src/util/config";
+import { isViewerMode, parsePermissions, parseUIConfig, permissions } from "../src/util/config";
 import { importPatternSlide } from "../src/ooxml/pattern";
 import { makeChart, makeShape, makeSlide, makeTable, makeTextBox, newPresentation } from "../src/model/defaults";
 import { PRESET_NAMES, presetPaths } from "../src/render/presetGeom";
@@ -994,6 +994,31 @@ export async function runSmoke(patternJson?: string): Promise<{ zipBytes: Uint8A
     ok(pdfRej && pngRej && zipRej, "permissions: exportPDF/PNG/Zip all reject when export disabled");
     ok(editorApi.getPermissions().export === false, "permissions: getPermissions reflects the gate");
     permissions.export = true; // restore
+  }
+
+  // ---------- mobile viewer mode detection ----------
+  {
+    ok(isViewerMode(undefined, "") === false, "viewer: editor by default");
+    ok(isViewerMode(undefined, "?view=1") === true, "viewer: ?view=1 boots the viewer");
+    ok(isViewerMode(undefined, "?view=true") === true, "viewer: ?view=true boots the viewer");
+    ok(isViewerMode({ viewer: true }, "") === true, "viewer: config.js viewer:true boots the viewer");
+    ok(isViewerMode({ viewer: false }, "?view=1") === true, "viewer: URL still wins to enable");
+    ok(isViewerMode(undefined, "?view=0") === false, "viewer: ?view=0 stays in the editor");
+  }
+
+  // ---------- dark theme survives to PowerPoint (dk1/lt1 polarity) ----------
+  {
+    const darkPres = newPresentation();
+    // an inverted/dark theme: light text on a dark background
+    darkPres.theme = { ...darkPres.theme, dk1: "F2F2F2", lt1: "1A1A1A" };
+    const darkZip = await buildPptx(darkPres, new Map());
+    const themeXml = await darkZip.file("ppt/theme/theme1.xml")!.async("text");
+    const clrScheme = themeXml.split("</a:clrScheme>")[0];
+    ok(/<a:lt1><a:srgbClr val="1A1A1A"\s*\/?>/.test(themeXml), "theme: dark lt1 written as literal srgbClr");
+    ok(/<a:dk1><a:srgbClr val="F2F2F2"\s*\/?>/.test(themeXml), "theme: dark dk1 written as literal srgbClr");
+    ok(!/sysClr/.test(clrScheme), "theme: no sysClr in clrScheme (PowerPoint would override it to OS black/white)");
+    const reDark = await parsePptx(await darkZip.generateAsync({ type: "uint8array" }), "dark.pptx");
+    ok(reDark.pres.theme.lt1 === "1A1A1A" && reDark.pres.theme.dk1 === "F2F2F2", "theme: dark dk1/lt1 round-trip");
   }
 
   return { zipBytes, report };

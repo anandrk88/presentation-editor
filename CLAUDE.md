@@ -65,12 +65,12 @@ src/
   state/
     store.ts            single observable EditorStore (undo/redo, selection, all edit ops)
     useStore.ts         React binding via useSyncExternalStore
-  components/           ribbon, canvas, panels, dialogs (the UI layer)
+  components/           ribbon, canvas, panels, dialogs (the UI layer); SlideViewer.tsx = touch read-only mobile viewer
   util/
     embed.ts            host-app integration (URL config + postMessage bridge, incl. pe:invoke)
     api.ts              public scripting API (window.presentationEditor): read/mutate/insert slides, elements, text, images, fills; export
     export.tsx          slide → PNG / multi-page PDF / PNG-zip (offscreen render → canvas, lazy jsPDF)
-    config.ts           host UI config (window.presentationEditorConfig + ?ui= → which editor chrome shows)
+    config.ts           host UI config (window.presentationEditorConfig + ?ui= chrome; ?view=1 read-only mobile viewer)
     autosave.ts         IndexedDB snapshot save/restore
     custom.ts           user palettes + font pairs (localStorage), Google-font loading
     loadImage.ts        image ingest (file / URL), SVG normalize + PNG fallback

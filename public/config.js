@@ -47,4 +47,9 @@ window.presentationEditorConfig = {
   // response — so your backend can approve/deny each export per user. Leave unset
   // to skip. Set it here (server-served), not in the URL.
   // exportAuthUrl: "https://your-app.example.com/api/authorize-export",
+
+  // Read-only mobile viewer: boot straight into a touch slideshow (swipe / tap)
+  // instead of the editor — ideal for viewing a deck on a phone. Per-link, append
+  // ?view=1 to the URL instead (e.g. /?file=<deck>&view=1).
+  viewer: false,
 };

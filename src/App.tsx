@@ -8,6 +8,7 @@ import { PresentMode } from "./components/PresentMode";
 import { Ribbon } from "./components/Ribbon";
 import { RightPanel } from "./components/RightPanel";
 import { SlidePanel } from "./components/SlidePanel";
+import { SlideViewer } from "./components/SlideViewer";
 import { StatusBar } from "./components/StatusBar";
 import { Icon } from "./components/icons";
 import { EMU_PER_PX, nextId } from "./model/defaults";
@@ -18,7 +19,7 @@ import { store } from "./state/store";
 import { useEditorState } from "./state/useStore";
 import { saveSnapshot } from "./util/autosave";
 import { initCustomFonts } from "./util/custom";
-import { uiConfig } from "./util/config";
+import { uiConfig, viewerMode } from "./util/config";
 import { embedConfig, initEmbedBridge, notifyHost, uploadTo } from "./util/embed";
 import { loadImageFile } from "./util/loadImage";
 
@@ -180,6 +181,7 @@ export default function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const s = store.getState();
+      if (viewerMode) return; // read-only viewer has its own keys
       if (s.presenting) return; // PresentMode handles its own keys
       const tgt = e.target;
       const inField = tgt instanceof Element && tgt.closest("input, select, textarea, [contenteditable=true]");
@@ -235,8 +237,13 @@ export default function App() {
         store.updateShapes(s.selection.shapeIds, sh => ({ ...sh, x: sh.x + dx, y: sh.y + dy }));
         return;
       }
+      // nothing selected → arrow keys navigate slides (PageUp/Down always do)
+      if ((e.key === "ArrowRight" || e.key === "ArrowDown") && !s.selection.shapeIds.length) { e.preventDefault(); store.selectSlide(s.selection.slideIndex + 1); return; }
+      if ((e.key === "ArrowLeft" || e.key === "ArrowUp") && !s.selection.shapeIds.length) { e.preventDefault(); store.selectSlide(s.selection.slideIndex - 1); return; }
       if (e.key === "PageDown") { e.preventDefault(); store.selectSlide(s.selection.slideIndex + 1); return; }
       if (e.key === "PageUp") { e.preventDefault(); store.selectSlide(s.selection.slideIndex - 1); return; }
+      if (e.key === "Home") { e.preventDefault(); store.selectSlide(0); return; }
+      if (e.key === "End") { e.preventDefault(); store.selectSlide(s.pres.slides.length - 1); return; }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -251,6 +258,10 @@ export default function App() {
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, []);
+
+  // read-only mobile viewer — bootstrap effects above still load the deck
+  // (?file=, the embed bridge, autosave); we just swap the editor shell for it.
+  if (viewerMode) return <SlideViewer />;
 
   return (
     <div className="app">

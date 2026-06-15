@@ -364,6 +364,30 @@ user's session cookie and returns 200 to allow or 403 to deny. Set it in
 > **refuse**, which closes the practical bypass (the one-line console call) and
 > routes every real export through your server's decision.
 
+### Read-only mobile viewer (view a deck on a phone)
+
+For "let people see the deck on the move," boot straight into a **touch
+slideshow** instead of the editor — slides render full-screen with **swipe /
+tap / keyboard** navigation, a progress bar, and a slide counter. No editor
+chrome, no editing.
+
+```
+https://editor.example.com/?file=<deck-url>&view=1
+```
+
+Per-link via `?view=1`, or globally via `config.js`:
+
+```js
+window.presentationEditorConfig = { viewer: true };
+```
+
+It reuses the same renderer (so it's pixel-identical to the editor) and the same
+deck-loading paths (`?file=`, the `pe:load` bridge). The current slide is the
+store's selected slide, so a host can also drive it with the scripting API
+(`selectSlide(i)`). Share a `&view=1` link and it opens to the slides on any
+phone. (For an even lighter mobile payload you can pre-render slides to PNG via
+`exportSlidePNG` and show an image carousel — see [docs/13](docs/13-scripting-api.md).)
+
 ---
 
 ## 5. Migrating from a server-based document editor

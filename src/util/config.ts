@@ -118,7 +118,7 @@ function httpsUrl(u: unknown): string | undefined {
   try { const abs = new URL(u).href; return /^https?:\/\//i.test(abs) ? abs : undefined; } catch { return undefined; }
 }
 
-type RawConfig = { ui?: unknown; permissions?: unknown; exportAuthUrl?: unknown };
+type RawConfig = { ui?: unknown; permissions?: unknown; exportAuthUrl?: unknown; viewer?: unknown };
 const rawConfig: RawConfig =
   (typeof window !== "undefined"
     ? (window as unknown as { presentationEditorConfig?: RawConfig }).presentationEditorConfig
@@ -141,3 +141,17 @@ export const permissions: Permissions = parsePermissions(rawConfig.permissions, 
  * in config.js (server-served) — not the URL — so users can't point it elsewhere.
  */
 export const exportAuthUrl: string | undefined = httpsUrl(rawConfig.exportAuthUrl);
+
+/** Pure: should the app boot into the read-only mobile slide viewer? */
+export function isViewerMode(raw: unknown, search = ""): boolean {
+  const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  if (asBool(r.viewer) === true) return true;
+  const v = new URLSearchParams(search).get("view");
+  return v === "1" || v === "true";
+}
+
+/**
+ * When true, App renders the touch-friendly read-only viewer instead of the
+ * editor. Set `?view=1` (per-link) or `viewer: true` in config.js.
+ */
+export const viewerMode: boolean = isViewerMode(rawConfig, search);

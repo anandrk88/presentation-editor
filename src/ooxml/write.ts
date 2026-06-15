@@ -481,7 +481,10 @@ function themeXml(p: Presentation): string {
   return XML_DECL +
     `<a:theme xmlns:a="${NS_A}" name="${esc(t.name)}"><a:themeElements>` +
     `<a:clrScheme name="${esc(t.name)}">` +
-    `<a:dk1><a:sysClr val="windowText" lastClr="${t.dk1}"/></a:dk1><a:lt1><a:sysClr val="window" lastClr="${t.lt1}"/></a:lt1>` +
+    // dk1/lt1 as literal srgbClr (NOT sysClr windowText/window) — sysClr makes
+    // PowerPoint substitute the OS black/white and ignore the hex, which flips a
+    // custom dark theme to white. (Same form PowerPoint writes for custom themes.)
+    `<a:dk1><a:srgbClr val="${t.dk1}"/></a:dk1><a:lt1><a:srgbClr val="${t.lt1}"/></a:lt1>` +
     `<a:dk2><a:srgbClr val="${t.dk2}"/></a:dk2><a:lt2><a:srgbClr val="${t.lt2}"/></a:lt2>` +
     `<a:accent1><a:srgbClr val="${t.accent1}"/></a:accent1><a:accent2><a:srgbClr val="${t.accent2}"/></a:accent2>` +
     `<a:accent3><a:srgbClr val="${t.accent3}"/></a:accent3><a:accent4><a:srgbClr val="${t.accent4}"/></a:accent4>` +
