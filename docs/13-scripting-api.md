@@ -133,6 +133,14 @@ isn't on the active slide.
 are set via `config.js` / URL and are read-only here. See
 [INTEGRATION.md §4c](../INTEGRATION.md).
 
+### `whenReady()` → `Promise<{ title, slideCount, slideWidth, slideHeight, warnings }>`
+
+Resolves once a document has loaded **and its slides have painted** (resolves
+immediately if one already loaded). Use it to drive a loading state without
+events: `await api.whenReady()`. Over the bridge, `pe:invoke {method:"whenReady"}`
+replies with `pe:result` when ready. The same signal is broadcast as the
+`pe:loaded` event (see [INTEGRATION.md](../INTEGRATION.md)).
+
 ### `ElementInfo`
 
 The stable projection of one element. Type-specific blocks appear only for the

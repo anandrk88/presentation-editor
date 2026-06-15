@@ -3,7 +3,7 @@ import { DOMParser as XmldomParser, XMLSerializer as XmldomSerializer } from "@x
 import { buildPptx } from "../src/ooxml/write";
 import { PARSE_LIMITS, parsePptx, setDOMParser, setXMLSerializer } from "../src/ooxml/parse";
 import { store } from "../src/state/store";
-import { editorApi } from "../src/util/api";
+import { editorApi, signalDocumentReady } from "../src/util/api";
 import { isViewerMode, parsePermissions, parseUIConfig, permissions } from "../src/util/config";
 import { importPatternSlide } from "../src/ooxml/pattern";
 import { makeChart, makeShape, makeSlide, makeTable, makeTextBox, newPresentation } from "../src/model/defaults";
@@ -1019,6 +1019,19 @@ export async function runSmoke(patternJson?: string): Promise<{ zipBytes: Uint8A
     ok(!/sysClr/.test(clrScheme), "theme: no sysClr in clrScheme (PowerPoint would override it to OS black/white)");
     const reDark = await parsePptx(await darkZip.generateAsync({ type: "uint8array" }), "dark.pptx");
     ok(reDark.pres.theme.lt1 === "1A1A1A" && reDark.pres.theme.dk1 === "F2F2F2", "theme: dark dk1/lt1 round-trip");
+  }
+
+  // ---------- document-ready signal (whenReady) ----------
+  {
+    const pending = editorApi.whenReady();
+    let resolvedEarly = false;
+    pending.then(() => { resolvedEarly = true; });
+    ok(!resolvedEarly, "whenReady: stays pending until a document loads");
+    const readyInfo = { title: "Deck", slideCount: 3, slideWidth: 12192000, slideHeight: 6858000, warnings: 1 };
+    signalDocumentReady(readyInfo);
+    const got = await pending;
+    ok(got.slideCount === 3 && got.title === "Deck" && got.warnings === 1, "whenReady: resolves with the ready info once painted");
+    ok((await editorApi.whenReady()).slideCount === 3, "whenReady: resolves immediately when already ready");
   }
 
   return { zipBytes, report };

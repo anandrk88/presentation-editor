@@ -181,7 +181,8 @@ to `parentOrigin`.
 | `type` | Payload | When |
 |---|---|---|
 | `pe:ready` | — | Bridge is listening (iframe booted). |
-| `pe:loaded` | `{ title, slideCount }` | A document finished opening (any path: `?file=`, `pe:load`, manual open). |
+| `pe:loading` | `{ phase: "fetch" \| "parse" }` | A load **started** — show your spinner. Fires for `?file=` and `pe:load` (`fetch`), then `parse`. |
+| `pe:loaded` | `{ title, slideCount, slideWidth, slideHeight, warnings }` | Document is parsed **and the slides have painted** — hide your spinner, the deck is truly on screen. Fires on any load path. `warnings` = count of approximate-import notes. |
 | `pe:dirty` | `{ dirty: boolean }` | Unsaved-changes flag changed — drive your "unsaved" indicator. |
 | `pe:document` | `{ data: ArrayBuffer, fileName }` | Reply to `pe:save` / Save in embed mode. `data` is the complete `.pptx` (transferable). |
 | `pe:saved` | `{ via: "upload" \| "message" }` | Save completed (uploaded to `saveUrl`, or delivered via `pe:document`). |
@@ -189,6 +190,24 @@ to `parentOrigin`.
 | `pe:slide` | `{ slide }` | The active slide changed. |
 | `pe:result` | `{ requestId, ok, value }` \| `{ requestId, ok: false, error }` | Reply to a `pe:invoke` call. |
 | `pe:error` | `{ message }` | Load/save failure. |
+
+### Loading state — knowing when the deck is truly on screen
+```js
+window.addEventListener("message", (e) => {
+  if (e.data?.source !== "presentation-editor") return;
+  switch (e.data.type) {
+    case "pe:loading": showSpinner(); break;                       // a load started
+    case "pe:loaded":  hideSpinner();                              // parsed AND painted
+      console.log(`Ready: ${e.data.slideCount} slides`); break;
+    case "pe:error":   hideSpinner(); showError(e.data.message); break;
+  }
+});
+```
+`pe:loaded` is posted **after the slides have painted**, so it's safe to reveal
+the editor / hide your loader on it without a flash of empty content. Same-origin
+hosts can instead `await editor.contentWindow.presentationEditor.whenReady()`
+(resolves with `{ title, slideCount, slideWidth, slideHeight, warnings }` once the
+deck is on screen).
 
 ### Complete host-side example
 ```js
@@ -269,7 +288,8 @@ await call("setImage", logoId, "https://cdn.example.com/logo.png");
 ```
 
 Methods (read): `getDocument`, `getSlides`, `getActiveSlide`, `getSlide`,
-`getSelection`, `getElement`, `getElements`. Methods (write, undoable, mark
+`getSelection`, `getElement`, `getElements`, `getConfig`, `getPermissions`,
+`whenReady`. Methods (write, undoable, mark
 dirty): element ops `setText`, `setElementProperties`, `setFillColor`,
 `setImage`, `deleteElement`, `reorderElement`; slide/doc ops `addSlide`,
 `duplicateSlide`, `deleteSlide`, `moveSlide`, `setDocumentTitle`, `applyTheme`,

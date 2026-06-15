@@ -19,6 +19,7 @@ import { store } from "./state/store";
 import { useEditorState } from "./state/useStore";
 import { saveSnapshot } from "./util/autosave";
 import { initCustomFonts } from "./util/custom";
+import { signalDocumentReady } from "./util/api";
 import { uiConfig, viewerMode } from "./util/config";
 import { embedConfig, initEmbedBridge, notifyHost, uploadTo } from "./util/embed";
 import { loadImageFile } from "./util/loadImage";
@@ -97,6 +98,7 @@ export default function App() {
   const onOpenFile = () => openInputRef.current?.click();
 
   const openBuffer = async (buf: ArrayBuffer, name: string) => {
+    notifyHost({ type: "pe:loading", phase: "parse" });
     store.setStatus(`Opening ${name}…`);
     const { pres, media, warnings } = await parsePptx(buf, name);
     store.loadPresentation(pres, media);
@@ -105,7 +107,15 @@ export default function App() {
       : `Opened ${name}`);
     setTimeout(() => store.setStatus(null), 5000);
     if (warnings.length) console.warn("Import warnings:", warnings);
-    notifyHost({ type: "pe:loaded", title: pres.title, slideCount: pres.slides.length });
+    // Announce "loaded" only AFTER the loaded slides have actually painted, so the
+    // host's ready signal truly means "on screen" — two rAFs clear the first paint.
+    const warned = warnings.length;
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      const p = store.pres;
+      const info = { title: p.title, slideCount: p.slides.length, slideWidth: p.slideWidth, slideHeight: p.slideHeight, warnings: warned };
+      notifyHost({ type: "pe:loaded", ...info });
+      signalDocumentReady(info);
+    }));
   };
 
   const handleOpen = async (file: File) => {
@@ -129,6 +139,7 @@ export default function App() {
     if (EMBED.fileUrl) {
       (async () => {
         try {
+          notifyHost({ type: "pe:loading", phase: "fetch" });
           store.setStatus("Fetching document…");
           const res = await fetch(EMBED.fileUrl!);
           if (!res.ok) throw new Error(`HTTP ${res.status} fetching the document`);

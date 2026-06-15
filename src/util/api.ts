@@ -344,6 +344,12 @@ export interface PresentationEditorApi {
   getConfig(): UIConfig;
   /** The resolved host permissions the editor enforces (e.g. `{ export }`). */
   getPermissions(): Permissions;
+  /**
+   * Resolves once a document has loaded AND its slides have painted. If a
+   * document is already loaded, resolves immediately; otherwise waits for the
+   * next one. Cross-origin: callable over pe:invoke (replies pe:result when ready).
+   */
+  whenReady(): Promise<ReadyInfo>;
 
   // —— write: element properties (active slide; undoable; marks the doc dirty) ——
   selectSlide(index: number): void;
@@ -387,6 +393,30 @@ export interface PresentationEditorApi {
 
   // —— events ——
   on(event: ApiEvent, handler: (payload: unknown) => void): () => void;
+}
+
+/** Payload reported when a document has loaded and painted. */
+export interface ReadyInfo {
+  title: string;
+  slideCount: number;
+  slideWidth: number;   // EMU
+  slideHeight: number;  // EMU
+  warnings: number;     // count of approximate-import warnings
+}
+
+// document-ready state, fulfilled by the app after a load has painted
+let readyCount = 0;
+let lastReady: ReadyInfo | null = null;
+const readyWaiters: ((info: ReadyInfo) => void)[] = [];
+
+/**
+ * Called by the app once a freshly loaded document has actually painted.
+ * Resolves any pending whenReady() promises. Not part of the public surface.
+ */
+export function signalDocumentReady(info: ReadyInfo): void {
+  readyCount++;
+  lastReady = info;
+  readyWaiters.splice(0).forEach(fn => { try { fn(info); } catch { /* host handler threw */ } });
 }
 
 function buildApi(): PresentationEditorApi {
@@ -444,6 +474,11 @@ function buildApi(): PresentationEditorApi {
     getElements() { return activeShapes().map(describeElement); },
     getConfig() { return { ...uiConfig, tabs: { ...uiConfig.tabs } }; },
     getPermissions() { return { ...permissions }; },
+    whenReady() {
+      return readyCount > 0 && lastReady
+        ? Promise.resolve(lastReady)
+        : new Promise<ReadyInfo>(resolve => readyWaiters.push(resolve));
+    },
 
     selectSlide(index) { store.selectSlide(index); },
     selectElement(idOrIds) {
@@ -659,7 +694,7 @@ export const editorApi: PresentationEditorApi = buildApi();
 
 /** Method names the postMessage bridge is allowed to invoke (read + write). */
 export const API_METHODS = [
-  "getDocument", "getSlides", "getActiveSlide", "getSlide", "getSelection", "getElement", "getElements", "getConfig", "getPermissions",
+  "getDocument", "getSlides", "getActiveSlide", "getSlide", "getSelection", "getElement", "getElements", "getConfig", "getPermissions", "whenReady",
   "selectSlide", "selectElement", "clearSelection",
   "setText", "setElementProperties", "setFillColor", "setImage", "deleteElement", "undo", "redo",
   "addSlide", "duplicateSlide", "deleteSlide", "moveSlide", "setDocumentTitle", "applyTheme", "setSlideBackgroundColor",

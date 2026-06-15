@@ -12,7 +12,9 @@
  *       editor.contentWindow.postMessage({ type: "pe:save" }, EDITOR_ORIGIN)
  *     Events posted back to the host (always tagged with source: "presentation-editor"):
  *       pe:ready                       — bridge is listening
- *       pe:loaded  { title, slideCount }
+ *       pe:loading { phase: "fetch" | "parse" }     — a load started (show a spinner)
+ *       pe:loaded  { title, slideCount, slideWidth, slideHeight, warnings }
+ *                                      — loaded AND painted (slides on screen)
  *       pe:dirty   { dirty }           — unsaved-changes indicator
  *       pe:document{ data: ArrayBuffer, fileName } — reply to pe:save (transferable)
  *       pe:saved   { via: "upload" | "message" }
@@ -99,8 +101,12 @@ export async function uploadTo(saveUrl: string, blob: Blob): Promise<void> {
   if (!res.ok) throw new Error(`Upload failed: HTTP ${res.status}`);
 }
 
+let bridgeWired = false;
+
 export function initEmbedBridge(cfg: EmbedConfig, handlers: BridgeHandlers) {
   if (!cfg.embed || !cfg.parentOrigin || typeof window === "undefined" || window.parent === window) return;
+  if (bridgeWired) return; // wire exactly once (guards React StrictMode / remounts → no doubled events)
+  bridgeWired = true;
   const origin = cfg.parentOrigin;
   post = (msg, transfer) =>
     window.parent.postMessage({ source: "presentation-editor", ...msg }, origin, transfer ?? []);
@@ -112,6 +118,7 @@ export function initEmbedBridge(cfg: EmbedConfig, handlers: BridgeHandlers) {
         case "pe:load": {
           let buf: ArrayBuffer | undefined = e.data.data instanceof ArrayBuffer ? e.data.data : undefined;
           if (!buf && typeof e.data.url === "string") {
+            post?.({ type: "pe:loading", phase: "fetch" });
             const res = await fetch(e.data.url);
             if (!res.ok) throw new Error(`Could not fetch document: HTTP ${res.status}`);
             buf = await res.arrayBuffer();
