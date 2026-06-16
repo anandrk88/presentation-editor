@@ -150,8 +150,10 @@ export function paraStyle(p: Paragraph): React.CSSProperties {
   return {
     textAlign: ALIGN_MAP[p.align],
     // OOXML spcPct is relative to SINGLE spacing (~1.2em), not to the font size —
-    // raw CSS percentages render ~25% too tight (the "cramped paragraph" bug)
-    lineHeight: p.lineSpacingPct ? (p.lineSpacingPct / 100) * 1.2 : 1.2,
+    // raw CSS percentages render ~25% too tight (the "cramped paragraph" bug).
+    // Floor at 1.0 so a tight value (e.g. a deck with 30% spacing) can't drop the
+    // line below the text height and make consecutive lines overlap.
+    lineHeight: p.lineSpacingPct ? Math.max(1, (p.lineSpacingPct / 100) * 1.2) : 1.2,
     paddingLeft: indent ? `${indent}px` : undefined,
     textIndent: p.bullet !== "none" ? "-24px" : undefined,
     margin: 0,
