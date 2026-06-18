@@ -7,6 +7,10 @@
 @font-face{font-family:"Exo";font-style:italic;font-weight:700;font-display:swap;src:url("Exo-BoldItalic.ttf") format("truetype");}
 @font-face{font-family:"Exo";font-style:italic;font-weight:400;font-display:swap;src:url("Exo-Italic.ttf") format("truetype");}
 @font-face{font-family:"Exo";font-style:normal;font-weight:400;font-display:swap;src:url("Exo-Regular.ttf") format("truetype");}
+@font-face{font-family:"Figtree";font-style:normal;font-weight:700;font-display:swap;src:url("Figtree-Bold.ttf") format("truetype");}
+@font-face{font-family:"Figtree";font-style:italic;font-weight:700;font-display:swap;src:url("Figtree-BoldItalic.ttf") format("truetype");}
+@font-face{font-family:"Figtree";font-style:italic;font-weight:400;font-display:swap;src:url("Figtree-Italic.ttf") format("truetype");}
+@font-face{font-family:"Figtree";font-style:normal;font-weight:400;font-display:swap;src:url("Figtree-Regular.ttf") format("truetype");}
 @font-face{font-family:"Google Sans";font-style:normal;font-weight:700;font-display:swap;src:url("GoogleSans-Bold.ttf") format("truetype");}
 @font-face{font-family:"Google Sans";font-style:italic;font-weight:700;font-display:swap;src:url("GoogleSans-BoldItalic.ttf") format("truetype");}
 @font-face{font-family:"Google Sans";font-style:italic;font-weight:400;font-display:swap;src:url("GoogleSans-Italic.ttf") format("truetype");}
@@ -46,6 +50,10 @@
 @font-face{font-family:"Roboto";font-style:normal;font-weight:400;font-display:swap;src:url("Roboto-Regular.ttf") format("truetype");}
 @font-face{font-family:"Sora";font-style:normal;font-weight:700;font-display:swap;src:url("Sora-Bold.ttf") format("truetype");}
 @font-face{font-family:"Sora";font-style:normal;font-weight:400;font-display:swap;src:url("Sora-Regular.ttf") format("truetype");}
+@font-face{font-family:"Stack Sans Headline";font-style:normal;font-weight:700;font-display:swap;src:url("StackSansHeadline-Bold.ttf") format("truetype");}
+@font-face{font-family:"Stack Sans Headline";font-style:normal;font-weight:400;font-display:swap;src:url("StackSansHeadline-Regular.ttf") format("truetype");}
+@font-face{font-family:"Stack Sans Text";font-style:normal;font-weight:700;font-display:swap;src:url("StackSansText-Bold.ttf") format("truetype");}
+@font-face{font-family:"Stack Sans Text";font-style:normal;font-weight:400;font-display:swap;src:url("StackSansText-Regular.ttf") format("truetype");}
 @font-face{font-family:"Urbanist";font-style:normal;font-weight:700;font-display:swap;src:url("Urbanist-Bold.ttf") format("truetype");}
 @font-face{font-family:"Urbanist";font-style:italic;font-weight:700;font-display:swap;src:url("Urbanist-BoldItalic.ttf") format("truetype");}
 @font-face{font-family:"Urbanist";font-style:italic;font-weight:400;font-display:swap;src:url("Urbanist-Italic.ttf") format("truetype");}

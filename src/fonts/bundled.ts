@@ -2,6 +2,7 @@
 export const BUNDLED_FONTS: string[] = [
   "Archivo",
   "Exo",
+  "Figtree",
   "Google Sans",
   "Jost",
   "Lato",
@@ -13,5 +14,7 @@ export const BUNDLED_FONTS: string[] = [
   "Poppins",
   "Roboto",
   "Sora",
+  "Stack Sans Headline",
+  "Stack Sans Text",
   "Urbanist"
 ];
