@@ -1,13 +1,16 @@
-// Self-host fonts into the app: copy a curated weight set per family from a
-// source folder into public/fonts/, generate the @font-face stylesheet, and
-// emit the family list for the picker. Re-runnable — drop more .ttf/.otf into
-// the source folder and run again.
+// Self-host fonts into the app: copy each weight from a source folder into
+// public/fonts/, generate the @font-face stylesheet, and emit the family list
+// for the picker. Re-runnable — drop more .ttf/.otf into the source folder and
+// run again.
 //
 //   node scripts/install-fonts.mjs ["D:\\path\\to\\fonts"] [--all-widths]
 //
-// By default it self-hosts the 4 styles the editor can actually pick
-// (Regular/Bold/Italic/BoldItalic = weight 400/700 × normal/italic) for each
-// BASE family (width variants like *_Condensed are skipped unless --all-widths).
+// Regular/Bold (+italics) live under the BASE family ("Montserrat") so the Bold
+// button works. Every OTHER weight (Thin/ExtraLight/Light/Medium/SemiBold/
+// ExtraBold/Black) is self-hosted as its OWN named family ("Montserrat SemiBold")
+// — the way PowerPoint names weights and how .pptx decks reference them — so it
+// renders on import and is selectable in the picker. Width variants like
+// *_Condensed are skipped unless --all-widths.
 
 import { readdirSync, mkdirSync, rmSync, copyFileSync, writeFileSync, statSync, existsSync } from "fs";
 import { resolve, dirname } from "path";
@@ -19,8 +22,6 @@ const ALL_WIDTHS = process.argv.includes("--all-widths");
 
 const outDir = resolve(root, "public", "fonts");
 const WEIGHTS = { Thin: 100, ExtraLight: 200, Light: 300, Regular: 400, Medium: 500, SemiBold: 600, Bold: 700, ExtraBold: 800, Black: 900 };
-// the editor only distinguishes normal/bold and normal/italic, so self-host just these
-const WANT = new Set(["400|0", "700|0", "400|1", "700|1"]);
 
 const camelToWords = s => s.replace(/_/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2").replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2").replace(/\s+/g, " ").trim();
 
@@ -34,7 +35,7 @@ function parse(file) {
   const weight = WEIGHTS[wtok];
   if (weight === undefined) return null;
   if (!ALL_WIDTHS && familyRaw.includes("_")) return null; // skip Condensed/Expanded/... variants
-  return { familyRaw, weight, italic, family: camelToWords(familyRaw), ext: m[3].toLowerCase() };
+  return { familyRaw, weight, wtok, italic, family: camelToWords(familyRaw), ext: m[3].toLowerCase() };
 }
 
 if (!existsSync(SRC)) {
@@ -50,10 +51,14 @@ for (const f of readdirSync(SRC)) {
   scanned++;
   const p = parse(f);
   if (!p) continue;
-  const key = `${p.weight}|${p.italic}`;
-  if (!WANT.has(key)) continue;
-  if (!fams.has(p.family)) fams.set(p.family, { family: p.family, files: new Map() });
-  const fam = fams.get(p.family);
+  // Regular/Bold stay under the base family (Bold button toggles 400↔700);
+  // every other weight becomes its own named family at css weight 400.
+  const named = p.weight !== 400 && p.weight !== 700;
+  const famName = named ? `${p.family} ${p.wtok}` : p.family;
+  const cssWeight = named ? 400 : p.weight;
+  const key = `${cssWeight}|${p.italic}`;
+  if (!fams.has(famName)) fams.set(famName, { family: famName, files: new Map() });
+  const fam = fams.get(famName);
   if (!fam.files.has(key)) fam.files.set(key, f);
 }
 
