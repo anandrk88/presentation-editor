@@ -818,39 +818,19 @@ export function RightPanel() {
                   </select>
                 </div>
               )}
-              <div className="pane-section">
-                <label className="pane-check">
-                  <input type="checkbox" checked={chart.legend} onChange={e => store.updateShapes([chart.id], s => s.kind === "chart" ? { ...s, legend: e.target.checked } : s)} />
-                  Show legend
-                </label>
-                {chart.legend && (
-                  <div style={{ margin: "6px 0 2px" }}>
-                    <div className="pane-label">Legend position</div>
-                    <select
-                      className="pane-select wide"
-                      value={chart.legendPos ?? "r"}
-                      onChange={e => store.updateShapes([chart.id], s => s.kind === "chart" ? { ...s, legendPos: e.target.value as ChartShape["legendPos"] } : s)}
-                    >
-                      <option value="r">Right</option>
-                      <option value="b">Bottom</option>
-                      <option value="l">Left</option>
-                      <option value="t">Top</option>
-                    </select>
-                  </div>
-                )}
-                {(chart.chart === "line" || chart.chart === "scatter") && (
-                  <>
-                    <label className="pane-check">
-                      <input type="checkbox" checked={chart.marker ?? true} onChange={e => store.updateShapes([chart.id], s => s.kind === "chart" ? { ...s, marker: e.target.checked } : s)} />
-                      Point markers
-                    </label>
-                    <label className="pane-check">
-                      <input type="checkbox" checked={!!chart.smooth} onChange={e => store.updateShapes([chart.id], s => s.kind === "chart" ? { ...s, smooth: e.target.checked ? true : (s.chart === "scatter" ? false : undefined) } : s)} />
-                      Smooth lines
-                    </label>
-                  </>
-                )}
-              </div>
+              {/* Legend on/off + position lives in Add Chart Element → Legend (single source of truth). */}
+              {(chart.chart === "line" || chart.chart === "scatter") && (
+                <div className="pane-section">
+                  <label className="pane-check">
+                    <input type="checkbox" checked={chart.marker ?? true} onChange={e => store.updateShapes([chart.id], s => s.kind === "chart" ? { ...s, marker: e.target.checked } : s)} />
+                    Point markers
+                  </label>
+                  <label className="pane-check">
+                    <input type="checkbox" checked={!!chart.smooth} onChange={e => store.updateShapes([chart.id], s => s.kind === "chart" ? { ...s, smooth: e.target.checked ? true : (s.chart === "scatter" ? false : undefined) } : s)} />
+                    Smooth lines
+                  </label>
+                </div>
+              )}
               </Acc>
               <Acc id="chart-elements" title="Chart elements">
               <div className="pane-section">
