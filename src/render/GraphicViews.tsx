@@ -531,16 +531,35 @@ export function ChartView({ shape, theme, defsPrefix = "c" }: { shape: ChartShap
         const fit = (budgetPx: number) => Math.max(1, Math.floor(budgetPx / (fontPx * 0.58)));
         const swatch = 9, gap = 4;
         if (legendPos === "t" || legendPos === "b") {
-          // shrink each slot to fit the chart width — never overflow the bounds
-          const itemW = Math.min(112, (w - 12) / items.length);
-          const x0 = Math.max(6, (w - itemW * items.length) / 2);
           const y = legendPos === "t" ? titleH + 10 : h - 8;
+          const avail = w - 12;
+          const itemGap = 16;   // space between entries
+          // width each entry needs to show its FULL label (swatch + gap + text)
+          const contentW = items.map(it => swatch + gap + it.label.length * fontPx * 0.6);
+          const span = contentW.reduce((a, b) => a + b, 0) + itemGap * (items.length - 1);
+          if (span <= avail) {
+            // everything fits — show full labels, centered, no truncation
+            let cx = Math.max(6, (w - span) / 2);
+            const at = contentW.map(cw => { const x = cx; cx += cw + itemGap; return x; });
+            return (
+              <g transform={`translate(0 ${y})`}>
+                {items.map((it, i) => (
+                  <g key={i} transform={`translate(${at[i]} 0)`}>
+                    <rect width={swatch} height={swatch} y={-swatch} fill={it.color} />
+                    <text x={swatch + gap} y={0} style={LEGEND}>{it.label}</text>
+                  </g>
+                ))}
+              </g>
+            );
+          }
+          // not enough room — equal slots + truncate each to fit its slot
+          const itemW = avail / items.length;
           return (
-            <g transform={`translate(${x0} ${y})`}>
+            <g transform={`translate(6 ${y})`}>
               {items.map((it, i) => (
                 <g key={i} transform={`translate(${i * itemW} 0)`}>
                   <rect width={swatch} height={swatch} y={-swatch} fill={it.color} />
-                  <text x={swatch + gap} y={0} style={LEGEND}>{truncate(it.label, fit(itemW - swatch - gap - 2))}</text>
+                  <text x={swatch + gap} y={0} style={LEGEND}>{truncate(it.label, fit(itemW - swatch - gap - 6))}</text>
                 </g>
               ))}
             </g>
