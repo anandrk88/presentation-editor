@@ -117,6 +117,22 @@ function linePath(pts: (readonly [number, number])[], smooth?: boolean): string 
   return d;
 }
 
+/** Auto-fit width (px) for a vertical (left/right) legend column: sized to the
+ *  longest entry at the legend font, so names like "Series 1" aren't truncated.
+ *  Clamped to [64, 45% of chart width] so a long name can't starve the plot.
+ *  Derived from the labels, so it needs no round-trip — it re-fits on reopen. */
+export function legendBoxW(shape: ChartShape): number {
+  const wPx = px(shape.w);
+  const items = shape.chart === "pie" || shape.chart === "doughnut"
+    ? shape.categories
+    : shape.series.map(s => s.name);
+  const fontPt = shape.partStyles?.legend?.sizePt ?? shape.labelSizePt ?? 12;
+  const fontPx = (fontPt * 96) / 72;
+  const maxLen = Math.max(1, ...items.slice(0, 12).map(s => (s || "").length));
+  const needed = 13 + maxLen * fontPx * 0.6 + 14;   // swatch+gap + text + padding
+  return Math.round(Math.max(64, Math.min(needed, wPx * 0.45)));
+}
+
 /** Margins + plot rectangle for a chart, in shape-local px. Shared by the renderer and the canvas (part hit/highlight). */
 export function chartLayout(shape: ChartShape) {
   const w = px(shape.w), h = px(shape.h);
@@ -128,9 +144,10 @@ export function chartLayout(shape: ChartShape) {
   const xTitleH = shape.axisTitleX && !plain ? 16 : 0;
   const yTitleW = shape.axisTitleY && !plain ? 16 : 0;
   const titleH = shape.title ? 26 : 8;
+  const legW = legendPos === "l" || legendPos === "r" ? legendBoxW(shape) : 0;
   const mTop = titleH + (legendPos === "t" ? 20 : 0);
-  const mLeft = (legendPos === "l" ? 100 : 0) + yTitleW + (plain ? 8 : hideY ? 8 : shape.chart === "bar" ? 78 : 38);
-  const mRight = (legendPos === "r" ? 96 : 6) + 2;
+  const mLeft = (legendPos === "l" ? legW + 4 : 0) + yTitleW + (plain ? 8 : hideY ? 8 : shape.chart === "bar" ? 78 : 38);
+  const mRight = (legendPos === "r" ? legW : 6) + 2;
   const mBottom = (legendPos === "b" ? 20 : 0) + xTitleH + (plain ? 8 : hideX ? 8 : 22) + 4;
   const pw = Math.max(20, w - mLeft - mRight);
   const ph = Math.max(20, h - mTop - mBottom);
@@ -145,8 +162,9 @@ export function chartPartRegions(shape: ChartShape): { part: ChartPart; x: numbe
   if (shape.axisTitleX && !L.plain) out.push({ part: "axisTitleX", x: L.ox + L.pw / 2 - 70, y: L.h - 20, w: 140, h: 16 });
   if (shape.axisTitleY && !L.plain) out.push({ part: "axisTitleY", x: (L.legendPos === "l" ? 104 : 4), y: L.oy + L.ph / 2 - 70, w: 16, h: 140 });
   if (L.legendPos) {
-    if (L.legendPos === "r") out.push({ part: "legend", x: L.w - 96, y: L.oy, w: 92, h: Math.min(L.ph, 180) });
-    else if (L.legendPos === "l") out.push({ part: "legend", x: 4, y: L.oy, w: 92, h: Math.min(L.ph, 180) });
+    const legW = legendBoxW(shape);
+    if (L.legendPos === "r") out.push({ part: "legend", x: L.w - legW + 4, y: L.oy, w: legW - 8, h: Math.min(L.ph, 180) });
+    else if (L.legendPos === "l") out.push({ part: "legend", x: 4, y: L.oy, w: legW - 8, h: Math.min(L.ph, 180) });
     else if (L.legendPos === "t") out.push({ part: "legend", x: 6, y: L.titleH, w: L.w - 12, h: 18 });
     else out.push({ part: "legend", x: 6, y: L.h - 18, w: L.w - 12, h: 16 });
   }
@@ -528,7 +546,7 @@ export function ChartView({ shape, theme, defsPrefix = "c" }: { shape: ChartShap
             </g>
           );
         }
-        const boxW = 96;
+        const boxW = legendBoxW(shape);
         const x = legendPos === "l" ? 8 : w - boxW + 8;
         const rowH = Math.max(16, fontPx + 5);
         return (
