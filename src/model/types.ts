@@ -211,7 +211,7 @@ export interface ChartSeries {
 }
 
 /** Individually stylable chart text elements (PowerPoint: select element → format). */
-export type ChartPart = "title" | "axisTitleX" | "axisTitleY" | "legend" | "axisLabels";
+export type ChartPart = "title" | "axisTitleX" | "axisTitleY" | "legend" | "axisLabels" | "dataLabels";
 
 /** Per-element text formatting (font/size/color/weight) for a chart part. */
 export interface ChartTextStyle {
@@ -247,6 +247,9 @@ export interface ChartShape extends ShapeBase {
   partStyles?: Partial<Record<ChartPart, ChartTextStyle>>;
   /** Value labels on points/bars/slices (c:dLbls showVal / showPercent for pies). */
   dataLabels?: boolean;
+  /** Data-label placement (c:dLblPos). Generic token mapped per chart type on read/write.
+   *  undefined = default (outside/above for cartesian, inside for pie). */
+  dataLabelPos?: "outEnd" | "ctr" | "inEnd";
   /** Percentage error bars on each series (c:errBars), undefined = off. */
   errorBarsPct?: number;
   axisTitleX?: string;

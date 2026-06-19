@@ -36,8 +36,9 @@ round-trip to `.pptx` unless noted.
 ## Charts
 - 8 kinds (column, bar, line, area, scatter, radar, pie, doughnut) with variants (clustered/stacked/100%, markers, smoothing, radar styles).
 - Data editor; series/slice colors; legend position; data labels; error bars; axis titles; hidden axes.
+- **Data labels** (`c:dLbls`): to change a label's text, edit its value in the data editor (the label *is* the value). **Position** (`c:dLblPos`) — Outside End / Center / Inside End (Above / Center / Below on line/area/scatter) — via the chart-elements **Data Labels** flyout; mapped per chart type on write so PowerPoint never repair-strips it.
 - **Format**: chart-area & plot fill/border, gridline color/visibility, series line width/dash, marker size.
-- <a id="charts"></a>**Per-element text styling**: select the title, an axis title, the legend, or the axis labels (click on the chart or pick in the pane) and format font/size/color/B-I-U from the **Home tab** — exactly PowerPoint's workflow.
+- <a id="charts"></a>**Per-element text styling**: select the title, an axis title, the legend, the axis labels, or the **data labels** (click on the chart or pick in the pane) and format font/size/color/B-I-U from the **Home tab** — exactly PowerPoint's workflow. Data-label styling round-trips as `<c:txPr>` inside `<c:dLbls>`.
 
 ## Theming & fonts
 - Color themes (Design tab) + **custom palettes** ("Customize Colors", 12 slots, saved).

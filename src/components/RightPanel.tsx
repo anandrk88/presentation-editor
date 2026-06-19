@@ -1026,6 +1026,7 @@ export function RightPanel() {
                     ["axisTitleY", "Y Title", !!chart.axisTitleY && !["pie", "doughnut", "radar"].includes(chart.chart)],
                     ["legend", "Legend", chart.legend],
                     ["axisLabels", "Labels", !["pie", "doughnut", "radar"].includes(chart.chart)],
+                    ["dataLabels", "Data Labels", !!chart.dataLabels && chart.chart !== "radar"],
                   ] as const).filter(([, , ok]) => ok).map(([part, label]) => (
                     <button
                       key={part}
@@ -1149,8 +1150,26 @@ function ChartElementsMenu({ chart }: { chart: ChartShape }) {
             }}>{check(!!chart.title)} Above Chart…</button>
           </Flyout>
           <Flyout label="Data Labels">
-            <button className="menu-item" onClick={() => up(s => ({ ...s, dataLabels: undefined }))}>{check(!chart.dataLabels)} None</button>
-            <button className="menu-item" onClick={() => up(s => ({ ...s, dataLabels: true }))}>{check(chart.dataLabels)} Show {plain ? "Percentages" : "Values"}</button>
+            <button className="menu-item" onClick={() => up(s => ({ ...s, dataLabels: undefined, dataLabelPos: undefined }))}>{check(!chart.dataLabels)} None</button>
+            <button className="menu-item" onClick={() => up(s => ({ ...s, dataLabels: true }))}>{check(!!chart.dataLabels)} Show {plain ? "Percentages" : "Values"}</button>
+            {chart.chart !== "radar" && (() => {
+              const lineish = chart.chart === "line" || chart.chart === "area" || chart.chart === "scatter";
+              const opts = lineish
+                ? ([["outEnd", "Above"], ["ctr", "Center"], ["inEnd", "Below"]] as const)
+                : ([["outEnd", "Outside End"], ["ctr", "Center"], ["inEnd", "Inside End"]] as const);
+              const def = plain ? "ctr" : "outEnd";   // per-type default placement
+              return (
+                <>
+                  <div className="menu-div" />
+                  {opts.map(([pos, label]) => (
+                    <button key={pos} className="menu-item"
+                      onClick={() => up(s => ({ ...s, dataLabels: true, dataLabelPos: pos === def ? undefined : pos }))}>
+                      {check(!!chart.dataLabels && (chart.dataLabelPos ?? def) === pos)} {label}
+                    </button>
+                  ))}
+                </>
+              );
+            })()}
           </Flyout>
           <Flyout label="Error Bars" disabled={plain}>
             <button className="menu-item" onClick={() => up(s => ({ ...s, errorBarsPct: undefined }))}>{check(!chart.errorBarsPct)} None</button>

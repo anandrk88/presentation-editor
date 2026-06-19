@@ -289,8 +289,23 @@ export function chartSpaceXml(ch: ChartShape): string {
       `</c:ser>`;
   }).join("");
 
+  // data-label position: map our generic token to the per-type OOXML c:dLblPos
+  // value, dropping it where invalid (PowerPoint repair-strips e.g. outEnd on a
+  // stacked bar, or in/outEnd on a line — lines use t/b/ctr).
+  const dlblPos = (() => {
+    const p = ch.dataLabelPos;
+    if (!p) return "";
+    const stacked = grouping === "stacked" || grouping === "percentStacked";
+    let tok = "";
+    if (ch.chart === "bar" || ch.chart === "column") tok = stacked && p === "outEnd" ? "" : p;
+    else if (ch.chart === "line" || ch.chart === "scatter") tok = p === "outEnd" ? "t" : p === "inEnd" ? "b" : "ctr";
+    else if (isPie) tok = p;
+    // area / radar: no valid dLblPos — omit (kept editor-side only)
+    return tok ? `<c:dLblPos val="${tok}"/>` : "";
+  })();
+  // CT_DLbls order: numFmt?, spPr?, txPr?, dLblPos?, then the show* flags.
   const dLbls = ch.dataLabels
-    ? `<c:dLbls><c:showLegendKey val="0"/><c:showVal val="${isPie ? 0 : 1}"/><c:showCatName val="0"/><c:showSerName val="0"/><c:showPercent val="${isPie ? 1 : 0}"/><c:showBubbleSize val="0"/></c:dLbls>`
+    ? `<c:dLbls>${chartTxPr(ch.partStyles?.dataLabels)}${dlblPos}<c:showLegendKey val="0"/><c:showVal val="${isPie ? 0 : 1}"/><c:showCatName val="0"/><c:showSerName val="0"/><c:showPercent val="${isPie ? 1 : 0}"/><c:showBubbleSize val="0"/></c:dLbls>`
     : "";
 
   const axTitle = (text: string | undefined, horz: boolean, style?: import("../model/types").ChartTextStyle) => text

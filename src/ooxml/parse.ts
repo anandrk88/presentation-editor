@@ -571,7 +571,7 @@ function richText(el: Element | null): string | undefined {
   return out || undefined;
 }
 
-function parseChartDoc(doc: Document): Pick<ChartShape, "chart" | "categories" | "series" | "title" | "legend" | "grouping" | "marker" | "smooth" | "radarStyle" | "labelSizePt" | "legendPos" | "dataLabels" | "errorBarsPct" | "axisTitleX" | "axisTitleY" | "hideAxisX" | "hideAxisY" | "chartFill" | "chartBorder" | "plotFill" | "plotBorder" | "markerSizePt" | "pointColors" | "gridColor" | "hideGridlines" | "partStyles"> | null {
+function parseChartDoc(doc: Document): Pick<ChartShape, "chart" | "categories" | "series" | "title" | "legend" | "grouping" | "marker" | "smooth" | "radarStyle" | "labelSizePt" | "legendPos" | "dataLabels" | "dataLabelPos" | "errorBarsPct" | "axisTitleX" | "axisTitleY" | "hideAxisX" | "hideAxisY" | "chartFill" | "chartBorder" | "plotFill" | "plotBorder" | "markerSizePt" | "pointColors" | "gridColor" | "hideGridlines" | "partStyles"> | null {
   const chart = kid(doc.documentElement, "chart");
   const plotArea = kid(chart, "plotArea");
   if (!plotArea) return null;
@@ -633,6 +633,17 @@ function parseChartDoc(doc: Document): Pick<ChartShape, "chart" | "categories" |
   const dataLabels = dLblsEl
     ? attr(kid(dLblsEl, "showVal"), "val") === "1" || attr(kid(dLblsEl, "showPercent"), "val") === "1" || undefined
     : undefined;
+  // data-label position (map per-type c:dLblPos back to our generic token) + text style
+  let dataLabelPos: ChartShape["dataLabelPos"];
+  let dataLabelsStyle: ChartTextStyle | undefined;
+  if (dLblsEl) {
+    dataLabelsStyle = parseChartRunStyle(kid(dLblsEl, "txPr"));
+    const posTok = attr(kid(dLblsEl, "dLblPos"), "val");
+    if (posTok === "outEnd" || posTok === "t") dataLabelPos = "outEnd";
+    else if (posTok === "inEnd" || posTok === "b" || posTok === "inBase") dataLabelPos = "inEnd";
+    else if (posTok === "ctr") dataLabelPos = "ctr";
+    // bestFit / l / r → leave undefined (per-type default)
+  }
 
   // axes: read titles + deletion by position (b = horizontal, l = vertical)
   let axisTitleX: string | undefined, axisTitleY: string | undefined;
@@ -772,13 +783,15 @@ function parseChartDoc(doc: Document): Pick<ChartShape, "chart" | "categories" |
   if (legStyle) ps.legend = legStyle;
   const axStyle = prune(axisLabelsStyle, labelSizePt);
   if (axStyle) ps.axisLabels = axStyle;
+  const dlblStyle = prune(dataLabelsStyle, labelSizePt);
+  if (dlblStyle) ps.dataLabels = dlblStyle;
   const partStylesOut = Object.keys(ps).length ? ps : undefined;
 
   return {
     chart: kind, categories, series, title,
     legend: !!legendEl, legendPos,
     grouping, marker, smooth, radarStyle, labelSizePt,
-    dataLabels, errorBarsPct, axisTitleX, axisTitleY, hideAxisX, hideAxisY,
+    dataLabels, dataLabelPos, errorBarsPct, axisTitleX, axisTitleY, hideAxisX, hideAxisY,
     chartFill, chartBorder, plotFill, plotBorder, markerSizePt,
     pointColors, gridColor, hideGridlines, partStyles: partStylesOut,
   };

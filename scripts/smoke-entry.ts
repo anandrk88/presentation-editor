@@ -496,6 +496,8 @@ export async function runSmoke(patternJson?: string): Promise<{ zipBytes: Uint8A
     chB.title = "Revenue by Quarter";
     chB.legendPos = "b";
     chB.dataLabels = true;
+    chB.dataLabelPos = "inEnd";                                    // inside-end on a column → c:dLblPos val="inEnd"
+    chB.partStyles = { dataLabels: { color: { kind: "srgb", hex: "FF0000" }, sizePt: 14, bold: true } };
     chB.errorBarsPct = 5;
     chB.axisTitleX = "Quarter";
     chB.axisTitleY = "Revenue (M)";
@@ -503,17 +505,22 @@ export async function runSmoke(patternJson?: string): Promise<{ zipBytes: Uint8A
     chB.chartFill = { kind: "solid", color: { kind: "srgb", hex: "F2F7FF" } };
     const chC = makeChart("line", 7315200, 914400, 4114800, 2743200);
     chC.hideAxisY = true;
+    chC.dataLabels = true;
+    chC.dataLabelPos = "outEnd";                                   // "above" on a line → written as c:dLblPos val="t", read back as outEnd
     presB.slides = [{ ...makeSlide("blank"), shapes: [chB, chC] }];
     const reB = await parsePptx(await (await buildPptx(presB, new Map())).generateAsync({ type: "uint8array" }), "elements.pptx");
     const rB = reB.pres.slides[0].shapes.filter((s): s is ChartShape => s.kind === "chart");
     const c1 = rB.find(c => c.chart === "column")!;
     ok(c1.legendPos === "b", "chart elements: legend position survives", c1.legendPos);
     ok(c1.dataLabels === true, "chart elements: data labels survive");
+    ok(c1.dataLabelPos === "inEnd", "chart elements: data-label position (inEnd) survives", c1.dataLabelPos);
+    ok(c1.partStyles?.dataLabels?.color?.kind === "srgb" && c1.partStyles.dataLabels.color.hex === "FF0000" && c1.partStyles.dataLabels.sizePt === 14 && c1.partStyles.dataLabels.bold === true, "chart elements: data-label text style survives (c:dLbls txPr)", JSON.stringify(c1.partStyles?.dataLabels));
     ok(c1.errorBarsPct === 5, "chart elements: error bars survive", String(c1.errorBarsPct));
     ok(c1.axisTitleX === "Quarter" && c1.axisTitleY === "Revenue (M)", "chart elements: axis titles survive", `${c1.axisTitleX}/${c1.axisTitleY}`);
     ok(c1.chartFill?.kind === "solid" && c1.chartFill.color.kind === "srgb" && c1.chartFill.color.hex === "F2F7FF", "chart elements: chart background fill survives");
     const c2 = rB.find(c => c.chart === "line")!;
     ok(c2.hideAxisY === true, "chart elements: hidden axis survives");
+    ok(c2.dataLabelPos === "outEnd", "chart elements: line label position maps t↔outEnd", c2.dataLabelPos);
     ok(reB.warnings.length === 0, "chart elements round-trip: no warnings", reB.warnings.join("; "));
   }
 

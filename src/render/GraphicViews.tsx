@@ -200,7 +200,8 @@ export function ChartView({ shape, theme, defsPrefix = "c" }: { shape: ChartShap
   const [plotPaint, plotDef] = paintFor(shape.plotFill, theme, `${defsPrefix}-pbg-${shape.id}`);
   const dl = !!shape.dataLabels;
   const err = shape.errorBarsPct;
-  const DLBL: React.CSSProperties = { ...LABEL_STYLE, fill: "#595959" };
+  const dlPos = shape.dataLabelPos;                   // undefined = per-type default
+  const DLBL = partCss("dataLabels", { ...LABEL_STYLE, fill: "#595959" });
   const AXLBL = partCss("axisLabels", LABEL_STYLE);   // axis tick + category labels
   const LEGEND = partCss("legend", LABEL_STYLE);      // legend entry text
 
@@ -323,7 +324,13 @@ export function ChartView({ shape, theme, defsPrefix = "c" }: { shape: ChartShap
                 <g key={si}>
                   <rect x={x} y={y} width={bw} height={bh} fill={seriesColor(si, theme, s.color)} stroke={stk.stacked ? "#FFFFFF" : undefined} strokeWidth={stk.stacked ? 0.8 : 0} />
                   {dl && v > 0 && (
-                    <text x={x + bw / 2} y={stk.stacked ? y + bh / 2 + 3 : y - 3} textAnchor="middle" style={DLBL}>{fmtNum(s.values[ci] ?? 0)}</text>
+                    <text
+                      x={x + bw / 2}
+                      y={stk.stacked || dlPos === "ctr" ? y + bh / 2 + 3
+                        : dlPos === "inEnd" && bh >= 13 ? y + 11
+                        : y - 3}
+                      textAnchor="middle" style={DLBL}
+                    >{fmtNum(s.values[ci] ?? 0)}</text>
                   )}
                   {errBar(`e${si}`, x + bw / 2, y, v, ph / maxV)}
                 </g>
@@ -351,9 +358,12 @@ export function ChartView({ shape, theme, defsPrefix = "c" }: { shape: ChartShap
               return (
                 <g key={si}>
                   <rect x={ox + (b / maxV) * pw} y={y} width={bw} height={bh} fill={seriesColor(si, theme, s.color)} stroke={stk.stacked ? "#FFFFFF" : undefined} strokeWidth={stk.stacked ? 0.8 : 0} />
-                  {dl && v > 0 && (
-                    <text x={stk.stacked ? xEnd - bw / 2 : xEnd + 4} y={y + bh / 2 + 3.5} textAnchor={stk.stacked ? "middle" : "start"} style={DLBL}>{fmtNum(s.values[ci] ?? 0)}</text>
-                  )}
+                  {dl && v > 0 && (() => {
+                    const center = stk.stacked || dlPos === "ctr";
+                    const inEnd = !center && dlPos === "inEnd" && bw >= 22;
+                    const lx = center ? xEnd - bw / 2 : inEnd ? xEnd - 4 : xEnd + 4;
+                    return <text x={lx} y={y + bh / 2 + 3.5} textAnchor={center ? "middle" : inEnd ? "end" : "start"} style={DLBL}>{fmtNum(s.values[ci] ?? 0)}</text>;
+                  })()}
                   {errBar(`e${si}`, xEnd, y + bh / 2, v, pw / maxV, true)}
                 </g>
               );
@@ -388,7 +398,7 @@ export function ChartView({ shape, theme, defsPrefix = "c" }: { shape: ChartShap
                 <path d={linePath(pts, shape.smooth)} fill="none" stroke={color} strokeWidth={seriesLineW(s, 2.2)} strokeDasharray={dashArray(s.dash)} strokeLinejoin="round" />
                 {shape.chart === "line" && (shape.marker ?? true) && pts.map((p, i) => <circle key={i} cx={p[0]} cy={p[1]} r={markerR(2.6)} fill={color} />)}
                 {dl && pts.map((p, i) => (
-                  <text key={`l${i}`} x={p[0]} y={p[1] - 6} textAnchor="middle" style={DLBL}>{fmtNum(s.values[i] ?? 0)}</text>
+                  <text key={`l${i}`} x={p[0]} y={dlPos === "ctr" ? p[1] + 3 : dlPos === "inEnd" ? p[1] + 14 : p[1] - 6} textAnchor="middle" style={DLBL}>{fmtNum(s.values[i] ?? 0)}</text>
                 ))}
                 {err && pts.map((p, i) => errBar(`e${i}`, p[0], p[1], stk.stacked ? stk.base(si, i) + stk.val(si, i) : Math.max(0, s.values[i] ?? 0), ph / maxV))}
               </g>
@@ -416,7 +426,7 @@ export function ChartView({ shape, theme, defsPrefix = "c" }: { shape: ChartShap
                 )}
                 {(shape.marker ?? true) && pts.map((p, i) => <circle key={i} cx={p[0]} cy={p[1]} r={markerR(3)} fill={color} />)}
                 {dl && pts.map((p, i) => (
-                  <text key={`l${i}`} x={p[0]} y={p[1] - 7} textAnchor="middle" style={DLBL}>{fmtNum(s.values[i] ?? 0)}</text>
+                  <text key={`l${i}`} x={p[0]} y={dlPos === "ctr" ? p[1] + 3 : dlPos === "inEnd" ? p[1] + 14 : p[1] - 7} textAnchor="middle" style={DLBL}>{fmtNum(s.values[i] ?? 0)}</text>
                 ))}
                 {err && pts.map((p, i) => errBar(`e${i}`, p[0], p[1], Math.max(0, s.values[i] ?? 0), ph / maxV))}
               </g>
@@ -465,6 +475,8 @@ export function ChartView({ shape, theme, defsPrefix = "c" }: { shape: ChartShap
         const cx = ox + pw / 2, cy = oy + ph / 2;
         const R = Math.min(pw, ph) / 2 - 4;
         const r0 = shape.chart === "doughnut" ? R * 0.55 : 0;
+        const outside = dlPos === "outEnd";
+        const pieDlbl = partCss("dataLabels", { ...LABEL_STYLE, fill: outside ? "#595959" : "#FFFFFF" });
         let ang = -Math.PI / 2;
         return vals.map((v, i) => {
           const sweep = (v / total) * Math.PI * 2;
@@ -476,15 +488,17 @@ export function ChartView({ shape, theme, defsPrefix = "c" }: { shape: ChartShap
             ? `M${p(a0, R)}A${R} ${R} 0 ${large} 1 ${p(a1, R)}L${p(a1, r0)}A${r0} ${r0} 0 ${large} 0 ${p(a0, r0)}Z`
             : `M${cx} ${cy}L${p(a0, R)}A${R} ${R} 0 ${large} 1 ${p(a1, R)}Z`;
           const mid = (a0 + a1) / 2;
-          const lr = r0 > 0 ? (R + r0) / 2 : R * 0.62;
+          const lr = outside ? R + 12
+            : dlPos === "inEnd" ? (r0 > 0 ? R * 0.78 + r0 * 0.22 : R * 0.82)
+            : (r0 > 0 ? (R + r0) / 2 : R * 0.62);   // ctr / default
           return (
             <g key={i}>
               <path d={d} fill={sliceColor(i)} stroke="#FFFFFF" strokeWidth={1.2} />
               {dl && v > 0 && sweep > 0.12 && (
                 <text
                   x={cx + lr * Math.cos(mid)} y={cy + lr * Math.sin(mid) + 3}
-                  textAnchor="middle"
-                  style={{ ...LABEL_STYLE, fill: "#FFFFFF" }}
+                  textAnchor={outside ? (Math.cos(mid) >= 0 ? "start" : "end") : "middle"}
+                  style={pieDlbl}
                 >{Math.round((v / total) * 100)}%</text>
               )}
             </g>
