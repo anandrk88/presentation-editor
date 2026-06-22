@@ -1,352 +1,448 @@
-# Inserting charts programmatically
+# Charts — complete reference
 
-How to add charts to the active slide through the scripting API, and exactly what the
-**data input** must look like for each of the 8 chart types. Every example here was run
-against the live editor and produces a valid chart.
+Everything about charts in this editor: the data model, **inserting**, **reading data
+back**, **updating**, and every styling dimension — **legend**, **data labels**, **series
+colors/lines/markers**, **axes & gridlines**, **title**, **grouping**, **fills**, and
+**per-element text formatting** — with, for each, *what you can set through the scripting
+API* vs *what is editor-UI only* vs *what round-trips to the `.pptx`*.
 
-> Companion to [13 — Scripting API](13-scripting-api.md). Chart insertion is part of that
-> API surface (`window.presentationEditor`); this doc is the chart-specific deep dive.
+> Companion to [13 — Scripting API](13-scripting-api.md). Examples were run against the
+> live editor.
 
----
-
-## 1. The one rule that matters most
-
-```js
-window.presentationEditor.insertChart(chartType, opts)
-//                                    ^^^^^^^^^  a STRING, passed FIRST
-```
-
-`chartType` is a **string** and must be **exactly** one of the 8 valid kinds:
-
-```
-"column" | "bar" | "line" | "area" | "pie" | "doughnut" | "scatter" | "radar"
-```
-
-⚠️ **There is no input validation today.** An unknown string (`"collumn"`), or an
-**object passed as the first argument**, does *not* throw — it silently creates a broken
-chart (`name: "undefined Chart"`) that renders blank in the editor and makes the saved
-`.pptx` **unreadable in PowerPoint** ("repair" prompt). Always pass a valid kind. Use the
-[safe wrapper](#9-recommended-safe-wrapper) until the API guards this itself.
-
-```js
-// ❌ WRONG — object first arg → corrupt chart
-pe.insertChart({ type: "column", data: [...] });
-
-// ❌ WRONG — typo'd kind → "undefined Chart", corrupts on save
-pe.insertChart("collumn", { ... });
-
-// ✅ RIGHT — kind string first, options second
-pe.insertChart("column", { categories: ["Q1","Q2"], series: [{ name: "2025", values: [4,7] }] });
-```
+## Contents
+1. [The two ways to call](#1-the-two-ways-to-call)
+2. [The chart data model](#2-the-chart-data-model-chartshape)
+3. [Capability matrix — set/read/round-trip](#3-capability-matrix)
+4. [Inserting a chart](#4-inserting-a-chart)
+5. [Per-type input (categories & series)](#5-per-type-input--categories--series)
+6. [Reading chart data back (data access)](#6-reading-chart-data-back-data-access)
+7. [Updating data](#7-updating-data)
+8. [Legend](#8-legend)
+9. [Data labels](#9-data-labels)
+10. [Series — colors, lines, markers](#10-series--colors-lines-markers)
+11. [Axes, gridlines & title](#11-axes-gridlines--title)
+12. [Grouping (stacked / 100 %)](#12-grouping-stacked--100)
+13. [Chart-area & plot-area fill/border](#13-chart-area--plot-area-fillborder)
+14. [Per-element text formatting](#14-per-element-text-formatting)
+15. [Known limitations](#15-known-limitations)
+16. [Source of truth](#16-source-of-truth)
 
 ---
 
-## 2. Signature & input shape
+## 1. The two ways to call
+
+**In-page** (same JS context as the editor):
+```js
+const pe = window.presentationEditor;
+const id = pe.insertChart("column", { categories: ["Q1","Q2"], series: [{ name:"R", values:[4,7] }] });
+```
+
+**Cross-origin** (host page → editor iframe, over `postMessage`): the `pe:invoke` bridge.
+`args` is the **argument list as an array**:
+```js
+iframe.contentWindow.postMessage(
+  { type: "pe:invoke", requestId, method: "insertChart", args: ["column", { categories:["Q1","Q2"], series:[{ name:"R", values:[4,7] }] }] },
+  editorOrigin,
+);
+// reply: { type:"pe:result", requestId, ok:true, value:<id> }  | { ok:false, error }
+```
+See [§4](#4-inserting-a-chart) for the full bridge helper. **Only method *names* are
+allow-listed; arguments are forwarded verbatim**, so all the input rules below apply
+identically over the bridge.
+
+---
+
+## 2. The chart data model (`ChartShape`)
+
+A chart is one shape on a slide. Its full model ([`src/model/types.ts`](../src/model/types.ts)):
 
 ```ts
-insertChart(chartType: ChartKind, opts?: InsertChartOpts): string   // returns the new element id
+interface ChartShape {
+  kind: "chart";
+  // geometry (shared by all shapes), EMU:
+  id, name; x, y, w, h; rot; flipH?, flipV?; groupId?;
 
-interface InsertChartOpts {
-  // position & size, in EMU (English Metric Units). All optional.
-  x?: number;  y?: number;  w?: number;  h?: number;
-  // the data:
-  categories?: string[];                       // axis/slice labels (see per-type rules)
-  series?: { name?: string; values: number[] }[];
+  // —— type & data ——
+  chart: "column"|"bar"|"line"|"area"|"pie"|"doughnut"|"scatter"|"radar";
+  categories: string[];                 // X labels / slice labels / scatter X-values
+  series: {
+    name: string;
+    values: number[];
+    color?: ColorRef;                   // undefined → theme accent cycle
+    lineWidthPt?: number;               // line/scatter/radar stroke width
+    dash?: "solid"|"dash"|"dot";        // line/scatter/radar stroke dash
+  }[];
+
+  // —— variants ——
+  grouping?: "clustered"|"stacked"|"percentStacked";  // column/bar/area; default clustered
+  marker?: boolean;                     // line/scatter point markers (default on)
+  markerSizePt?: number;                // default ~5
+  smooth?: boolean;                     // line/scatter curve smoothing
+  radarStyle?: "standard"|"marker"|"filled";
+
+  // —— title & legend ——
+  title?: string;                       // undefined = no title
+  legend: boolean;                      // show legend
+  legendPos?: "r"|"b"|"t"|"l";          // default "r"
+
+  // —— data labels ——
+  dataLabels?: boolean;
+  dataLabelPos?: "outEnd"|"ctr"|"inEnd";
+
+  // —— axes & gridlines ——
+  axisTitleX?: string;  axisTitleY?: string;
+  hideAxisX?: boolean;  hideAxisY?: boolean;
+  gridColor?: ColorRef; hideGridlines?: boolean;
+  errorBarsPct?: number;                // % error bars, undefined = off
+
+  // —— fills ——
+  chartFill?: Fill;  chartBorder?: LineProps;   // chart area (outer)
+  plotFill?: Fill;   plotBorder?: LineProps;    // plot area (inner)
+  pointColors?: (ColorRef|null)[];      // per-slice colors (pie/doughnut); null = auto
+
+  // —— text formatting ——
+  labelSizePt?: number;                 // global label font size (default 12pt)
+  partStyles?: Partial<Record<
+    "title"|"axisTitleX"|"axisTitleY"|"legend"|"axisLabels"|"dataLabels",
+    { font?, sizePt?, color?, bold?, italic?, underline? }
+  >>;
 }
 ```
 
-- **Returns** the new chart's element id (a string like `"chart_ab12_3"`). Keep it to
-  update the chart later with [`setChartData`](#7-updating-an-existing-charts-data).
-- **Coercion:** `categories` are coerced with `String(...)`, every `values` entry with
-  `Number(...)`. So `categories: [1, 2, 3]` becomes `["1","2","3"]`, and a non-numeric
-  value becomes `NaN` — pass real numbers.
-- **`series[].name`** is optional; it defaults to `"Series 1"`, `"Series 2"`, … in order.
-- **Omitting `categories`/`series`** fills the chart with built-in **sample data**
-  (Q1–Q4 with two series; scatter gets sample XY points). Good for a quick placeholder,
-  but for real output always pass your own.
+---
 
-### Units & positioning (EMU)
+## 3. Capability matrix
 
-All geometry is in **EMU**. The API exposes the constants:
+The scripting API is a **thin data layer**. It can **insert** a chart and **read/replace
+its data**, but the rich formatting below is configured in the **editor UI** (and saved
+into the `.pptx`) — it is **not** in the public API yet.
 
-```js
-pe.EMU_PER_INCH  // 914400
-pe.EMU_PER_PX    // 9525   (96 px / inch)
-pe.EMU_PER_PT    // 12700  (72 pt / inch)
+| Aspect | Set via API | Read via API | In editor UI | Round-trips to `.pptx` |
+|---|:--:|:--:|:--:|:--:|
+| Chart **type** | ✅ `insertChart` | ✅ `chart.chartType` | ✅ | ✅ |
+| **Position / size / rotation** | ✅ `insertChart` opts / `setElementProperties` | ✅ `x,y,w,h,rot…` | ✅ | ✅ |
+| **Categories** | ✅ `insertChart` / `setChartData` | ✅ `chart.categories` | ✅ (Edit Data) | ✅ |
+| **Series** name + values | ✅ `insertChart` / `setChartData` | ✅ `chart.series` | ✅ (Edit Data) | ✅ |
+| **Title** (text) | ❌ | ✅ `chart.title` | ✅ | ✅ |
+| **Legend** on/off | ❌ | ✅ `chart.legend` | ✅ | ✅ |
+| **Legend position** | ❌ | ❌ | ✅ | ✅ |
+| **Data labels** + position | ❌ | ❌ | ✅ | ✅ |
+| **Series colors / line / markers** | ❌ | ❌ | ✅ | ✅ |
+| **Per-slice colors** (pie) | ❌ | ❌ | ✅ | ✅ |
+| **Grouping** (stacked / 100 %) | ❌ | ❌ | ✅ | ✅ |
+| **Axis titles / hide axes / gridlines** | ❌ | ❌ | ✅ | ✅ |
+| **Chart/plot fill & border** | ❌ | ❌ | ✅ | ✅ |
+| **Per-element fonts** (`partStyles`) | ❌ | ❌ | ✅ | ✅ |
+
+> If you need the ❌ rows programmatically, that's a planned API extension
+> (`setChartOptions`) — see [§15](#15-known-limitations).
+
+---
+
+## 4. Inserting a chart
+
+```ts
+insertChart(chartType: ChartKind, opts?: {
+  x?, y?, w?, h?: number;                 // EMU; omitted → centered 5,000,000 × 3,000,000
+  categories?: string[];                  // coerced with String()
+  series?: { name?: string; values: number[] }[];  // values coerced with Number()
+}): string                                // returns the new chart's element id
 ```
 
-| You want | EMU |
-|---|---|
-| 1 inch | `914400` |
-| 1 cm | `360000` |
-| 1 px (@96dpi) | `9525` |
-| A 16:9 slide | `12192000 × 6858000` (13.33ʺ × 7.5ʺ) |
+⚠️ **`chartType` must be one of the 8 valid strings, passed FIRST.** There is no
+validation — an unknown string or an object-as-first-arg silently makes a broken chart
+(`"undefined Chart"`) that **corrupts the `.pptx`** (PowerPoint "repair"). Guard it
+([§15](#15-known-limitations)).
 
-If you **omit** `x/y/w/h`, the chart is placed **centered** at a default size of
-**5,000,000 × 3,000,000 EMU** (≈ 5.47ʺ × 3.28ʺ). To place explicitly:
+**Units (EMU):** `pe.EMU_PER_INCH` = 914400, `pe.EMU_PER_PX` = 9525, `pe.EMU_PER_PT` =
+12700. A 16:9 slide is `12192000 × 6858000`.
 
 ```js
-pe.insertChart("column", {
-  x: 914400, y: 914400,        // 1ʺ from top-left
-  w: 6_096_000, h: 3_429_000,  // half-slide-ish
+const id = pe.insertChart("column", {
+  x: 914400, y: 914400, w: 6096000, h: 3429000,
   categories: ["Q1","Q2","Q3","Q4"],
   series: [{ name: "Revenue", values: [4.3, 2.5, 3.5, 4.5] }],
 });
 ```
 
----
-
-## 3. How `categories` and `series` map — by chart type
-
-The **same two fields** (`categories`, `series`) feed every chart, but their meaning
-changes per type. This is the heart of the doc.
-
-### Category charts — `column`, `bar`, `line`, `area`
-
-The default shape. `categories` are the **X-axis labels**; each entry in `series` is one
-data series, and its `values[i]` lines up with `categories[i]`. Supports **multiple
-series** (drawn side-by-side / layered).
-
+**Cross-origin bridge helper:**
 ```js
-// column: vertical bars, grouped by category. Two series → clustered bars.
-pe.insertChart("column", {
-  categories: ["Q1", "Q2", "Q3", "Q4"],
-  series: [
-    { name: "2024", values: [4.3, 2.5, 3.5, 4.5] },
-    { name: "2025", values: [2.4, 4.4, 1.8, 2.8] },
-  ],
-});
-```
-
-- **`bar`** — identical input to `column`, just drawn **horizontally** (categories run
-  down the left, bars extend right).
-- **`line`** — each series is a line across the categories. Markers/smoothing are
-  styling, set in the editor (not via this API — see [§8](#8-what-you-can-and-cant-set-via-the-api-today)).
-- **`area`** — like `line`, but filled to the baseline.
-
-```js
-pe.insertChart("line", {
-  categories: ["Jan", "Feb", "Mar", "Apr"],
-  series: [{ name: "Visits", values: [10, 25, 45, 70] }],
-});
-
-pe.insertChart("area", {
-  categories: ["Jan", "Feb", "Mar"],
-  series: [
-    { name: "Organic", values: [3, 5, 4] },
-    { name: "Paid",    values: [2, 3, 5] },
-  ],
-});
-```
-
-> **Length rule:** make every `series.values` the same length as `categories`. A short
-> series leaves gaps; a long one is clipped to the category count.
-
-### Part-of-whole — `pie`, `doughnut`
-
-These show **one** series as slices of a whole.
-
-- **Only `series[0]` is used.** Any additional series are **ignored**.
-- Each **value** is one slice; **`categories`** are the **slice labels** (and the legend).
-- Data labels render as **percentages** (not raw values).
-
-```js
-// pie: categories = slice labels, series[0].values = slice sizes
-pe.insertChart("pie", {
-  categories: ["Chrome", "Safari", "Edge", "Other"],
-  series: [{ name: "Browser share", values: [63, 19, 5, 13] }],
-});
-
-// doughnut: same input, drawn with a center hole
-pe.insertChart("doughnut", {
-  categories: ["Done", "Remaining"],
-  series: [{ name: "Progress", values: [72, 28] }],
-});
-```
-
-> Values don't need to sum to 100 — slices are sized by proportion. Use whatever raw
-> counts you have.
-
-### Correlation — `scatter` (XY)
-
-The one type where **`categories` are not labels** — they hold the **numeric X values**
-(as strings), and `series[].values` are the **Y values**. Point *i* is at
-`(categories[i], series.values[i])`.
-
-```js
-// scatter: categories = X (numeric strings), values = Y. Point i = (x_i, y_i).
-pe.insertChart("scatter", {
-  categories: ["0.7", "1.8", "2.6", "3.2", "4.1"],   // X axis (numbers as strings)
-  series: [{ name: "Observations", values: [2.7, 3.2, 0.8, 1.2, 2.9] }], // Y axis
-});
-```
-
-- Pass X values as **numeric strings** (`"0.7"`); non-numeric X falls back to its index
-  (1, 2, 3…).
-- Multiple series are allowed; each shares the **same X values** (`categories`) but has
-  its own Y `values`.
-- Markers are **on by default** for scatter.
-
-### Comparison across axes — `radar`
-
-`categories` are the **spokes** (the axes radiating from the center); each series is one
-closed ring. Multiple series overlay for comparison.
-
-```js
-pe.insertChart("radar", {
-  categories: ["Speed", "Power", "Range", "Cost", "UX"],
-  series: [
-    { name: "Model X", values: [8, 6, 9, 4, 7] },
-    { name: "Model Y", values: [6, 8, 5, 7, 6] },
-  ],
-});
-```
-
----
-
-## 4. Quick reference table
-
-| `chartType` | Orientation / shape | `categories` mean | `series[].values` mean | Series used | Multi-series? |
-|---|---|---|---|---|---|
-| `"column"` | vertical bars | X-axis labels | bar heights | all | ✅ clustered |
-| `"bar"` | horizontal bars | Y-axis labels | bar lengths | all | ✅ clustered |
-| `"line"` | lines | X-axis labels | point heights | all | ✅ |
-| `"area"` | filled lines | X-axis labels | point heights | all | ✅ |
-| `"pie"` | slices | **slice labels** | slice sizes | **only `series[0]`** | ❌ (extras ignored) |
-| `"doughnut"` | slices + hole | **slice labels** | slice sizes | **only `series[0]`** | ❌ (extras ignored) |
-| `"scatter"` | XY points | **X values (numeric strings)** | **Y values** | all (shared X) | ✅ |
-| `"radar"` | spokes/rings | spoke (axis) labels | distance per spoke | all | ✅ |
-
----
-
-## 5. A complete example (one chart per type)
-
-```js
-const pe = window.presentationEditor;
-
-pe.insertChart("column",   { categories:["Q1","Q2","Q3","Q4"], series:[{name:"2024",values:[4.3,2.5,3.5,4.5]},{name:"2025",values:[2.4,4.4,1.8,2.8]}] });
-pe.insertChart("bar",      { categories:["North","South","East"], series:[{name:"Units",values:[120,90,150]}] });
-pe.insertChart("line",     { categories:["Jan","Feb","Mar","Apr"], series:[{name:"Visits",values:[10,25,45,70]}] });
-pe.insertChart("area",     { categories:["Jan","Feb","Mar"], series:[{name:"A",values:[3,5,4]},{name:"B",values:[2,3,5]}] });
-pe.insertChart("pie",      { categories:["Chrome","Safari","Edge","Other"], series:[{name:"Share",values:[63,19,5,13]}] });
-pe.insertChart("doughnut", { categories:["Done","Left"], series:[{name:"Progress",values:[72,28]}] });
-pe.insertChart("scatter",  { categories:["0.7","1.8","2.6","3.2","4.1"], series:[{name:"obs",values:[2.7,3.2,0.8,1.2,2.9]}] });
-pe.insertChart("radar",    { categories:["Speed","Power","Range","Cost","UX"], series:[{name:"Model X",values:[8,6,9,4,7]}] });
-```
-
----
-
-## 6. Inserting from a host page (cross-origin `postMessage`)
-
-When the editor runs in an iframe, call the same method over the `pe:invoke` bridge.
-**`args` is the argument list as an array** — so chart insertion is
-`args: [chartType, opts]`.
-
-```js
-const iframe = document.getElementById("editor");          // the <iframe> running the editor
-const editorOrigin = "https://editor.example.com";         // its origin
-
-function invoke(method, args) {
+function invoke(iframe, origin, method, args) {
   return new Promise((resolve, reject) => {
     const requestId = crypto.randomUUID();
     function onMsg(e) {
-      if (e.source !== iframe.contentWindow) return;
-      const d = e.data;
-      if (d?.type !== "pe:result" || d.requestId !== requestId) return;
+      if (e.source !== iframe.contentWindow || e.data?.type !== "pe:result" || e.data.requestId !== requestId) return;
       window.removeEventListener("message", onMsg);
-      d.ok ? resolve(d.value) : reject(new Error(d.error));
+      e.data.ok ? resolve(e.data.value) : reject(new Error(e.data.error));
     }
     window.addEventListener("message", onMsg);
-    iframe.contentWindow.postMessage({ type: "pe:invoke", requestId, method, args }, editorOrigin);
+    iframe.contentWindow.postMessage({ type: "pe:invoke", requestId, method, args }, origin);
   });
 }
-
-// insertChart(chartType, opts)  →  args = [chartType, opts]
-const id = await invoke("insertChart", [
-  "column",
-  { categories: ["Q1","Q2","Q3","Q4"], series: [{ name: "Revenue", values: [4.3,2.5,3.5,4.5] }] },
-]);
+const id = await invoke(iframe, editorOrigin, "insertChart",
+  ["column", { categories:["Q1","Q2"], series:[{ name:"R", values:[4,7] }] }]);
 ```
 
-The reply is `{ type:"pe:result", requestId, ok:true, value:<id> }`, or
-`{ ok:false, error:"…" }`. Only allow-listed method **names** are checked — **arguments
-are forwarded verbatim**, so the "valid type string first" rule applies here too. Note:
-if you pass `args` as a bare object instead of an array, the bridge wraps it as
-`[object]`, i.e. `insertChart(object)` → corrupt chart.
-
 ---
 
-## 7. Updating an existing chart's data
+## 5. Per-type input — `categories` & `series`
 
-`setChartData(id, { categories?, series? })` replaces the data on an existing chart and
-returns `true` on success (`false` if the id isn't a chart on the active slide). Per-series
-**colors are preserved**; omit a field to leave it unchanged.
+The same two fields feed every chart; their **meaning changes per type**.
+
+| `chartType` | `categories` mean | `series[].values` mean | Series used | Multi-series |
+|---|---|---|---|---|
+| `column` | X-axis labels | bar heights | all | ✅ clustered |
+| `bar` | Y-axis labels (horizontal) | bar lengths | all | ✅ clustered |
+| `line` | X-axis labels | point heights | all | ✅ |
+| `area` | X-axis labels | point heights | all | ✅ |
+| `pie` | **slice labels** | slice sizes | **only `series[0]`** | ❌ extras ignored |
+| `doughnut` | **slice labels** | slice sizes | **only `series[0]`** | ❌ extras ignored |
+| `scatter` | **numeric X (as strings)** | **Y values** | all (shared X) | ✅ |
+| `radar` | spoke (axis) labels | distance per spoke | all | ✅ |
 
 ```js
-const id = pe.insertChart("column", { categories:["A","B"], series:[{ name:"s", values:[1,2] }] });
+// column / bar / line / area — categories = X labels, one entry per series
+pe.insertChart("column", { categories:["Q1","Q2","Q3","Q4"],
+  series:[{name:"2024",values:[4.3,2.5,3.5,4.5]},{name:"2025",values:[2.4,4.4,1.8,2.8]}] });
 
-pe.setChartData(id, {
-  categories: ["X", "Y", "Z"],
-  series: [{ name: "s", values: [5, 6, 7] }],
-});
+// pie / doughnut — ONLY series[0]; categories label the slices; labels show %
+pe.insertChart("pie", { categories:["Chrome","Safari","Edge","Other"],
+  series:[{name:"Share",values:[63,19,5,13]}] });
+
+// scatter — categories are numeric X (strings); values are Y; point i = (x_i, y_i)
+pe.insertChart("scatter", { categories:["0.7","1.8","2.6","3.2","4.1"],
+  series:[{name:"obs",values:[2.7,3.2,0.8,1.2,2.9]}] });
+
+// radar — categories are spokes
+pe.insertChart("radar", { categories:["Speed","Power","Range","Cost","UX"],
+  series:[{name:"Model X",values:[8,6,9,4,7]}] });
 ```
-
-To change the **chart type** of an existing chart, there is no API yet — delete and
-re-insert, or change it in the editor UI.
+> **Length rule:** keep each `series.values` the same length as `categories`.
 
 ---
 
-## 8. What you can — and can't — set via the API today
+## 6. Reading chart data back (data access)
 
-| Set programmatically | How |
-|---|---|
-| Chart **type** | first arg of `insertChart` |
-| **Position / size** | `opts.x/y/w/h` (or `setElementProperties(id, {x,y,w,h,rot})`) |
-| **Categories & series** (names + values) | `opts.categories/series`, or `setChartData` |
+Any method that returns an **element** exposes a chart's data under `.chart` as
+**`ChartInfo`**:
 
-**Not exposed through the API yet** (configure these in the editor UI after inserting):
-chart **title**, **legend** on/off + position, **grouping** (stacked / 100 % stacked for
-column/bar/area), **per-series & per-slice colors**, **data labels** + position, **axis
-titles**, hide axes, line **markers / smoothing**, **radar style**, and fonts. The model
-supports all of these (`ChartShape` in [`src/model/types.ts`](../src/model/types.ts)); they
-just aren't wired into the public API surface.
-
-### Two known limitations (from the code audit)
-
-1. **No type validation** — an invalid `chartType` corrupts the `.pptx` (see [§1](#1-the-one-rule-that-matters-most)). Guard it yourself for now ([§9](#9-recommended-safe-wrapper)).
-2. **Negative values currently clamp to zero** in the renderer — a series like
-   `[-3, 5, -2]` draws the negatives flat on the baseline. Avoid charts with negative data
-   until this is fixed, or offset your data.
-
----
-
-## 9. Recommended safe wrapper
-
-Until the API validates input itself, wrap `insertChart` so a bad type can never reach it:
-
-```js
-const CHART_TYPES = ["column","bar","line","area","pie","doughnut","scatter","radar"];
-
-function insertChartSafe(pe, chartType, opts = {}) {
-  if (!CHART_TYPES.includes(chartType)) {
-    throw new Error(`insertChart: invalid chartType "${chartType}". Use one of: ${CHART_TYPES.join(", ")}`);
-  }
-  if (opts.series) {
-    for (const s of opts.series) {
-      if (!Array.isArray(s.values) || s.values.some(v => typeof v !== "number" || Number.isNaN(v))) {
-        throw new Error(`insertChart: series "${s.name ?? "?"}" has non-numeric values`);
-      }
-    }
-  }
-  return pe.insertChart(chartType, opts);
+```ts
+interface ChartInfo {
+  chartType: "column"|"bar"|…|"radar";
+  title?: string;
+  legend: boolean;
+  categories: string[];
+  series: { name: string; values: number[] }[];
 }
 ```
 
+Methods that return chart info:
+
+| Method | Returns | Charts under |
+|---|---|---|
+| `getElement(id)` | one `ElementInfo` \| null | `.chart` |
+| `getElements()` | `ElementInfo[]` (active slide) | `.chart` |
+| `getActiveSlide()` | `SlideInfo` **with** `.elements` | `.elements[].chart` |
+| `getSlide(i)` | `SlideInfo` **with** `.elements` | `.elements[].chart` |
+| `getSelection()` | `{ ids, elements }` | `.elements[].chart` |
+| `getSlides()` | `SlideInfo[]` (summaries, **no** elements) | — |
+
+```js
+const el = pe.getElement(id);
+// el = { id, name, kind:"chart", x,y,w,h, rot, px:{…},
+//        chart: { chartType:"column", title:undefined, legend:true,
+//                 categories:["Q1","Q2","Q3","Q4"],
+//                 series:[ {name:"2024",values:[4.3,2.5,3.5,4.5]},
+//                          {name:"2025",values:[2.4,4.4,1.8,2.8]} ] } }
+
+// every chart on the active slide:
+const charts = pe.getElements().filter(e => e.kind === "chart").map(e => e.chart);
+```
+
+**What `ChartInfo` does *not* include:** legend *position*, grouping, series colors /
+line width / dash, markers, data labels, axis titles, gridlines, fills, or fonts. Those
+live in the model and the `.pptx`, but are **not** projected into the read API. If you
+need them, read the raw model in-page via `window.__store` (dev builds only) or request
+the `setChartOptions`/richer-`ChartInfo` extension.
+
 ---
 
-## Source of truth
+## 7. Updating data
 
-- `insertChart` / `setChartData` — [`src/util/api.ts`](../src/util/api.ts)
-- Chart model (`ChartShape`, `ChartKind`, `ChartSeries`) — [`src/model/types.ts`](../src/model/types.ts)
-- Chart defaults (`makeChart`, `CHART_NAMES`) — [`src/model/defaults.ts`](../src/model/defaults.ts)
+`setChartData(id, { categories?, series? })` → `boolean`. Replaces the data on an existing
+chart; **per-series colors are preserved**; omit a field to leave it unchanged.
+
+```js
+pe.setChartData(id, {
+  categories: ["X","Y","Z"],
+  series: [{ name: "s", values: [5, 6, 7] }],
+});   // → true
+```
+To change a chart's **type**, delete + re-insert (no API to mutate type in place).
+
+Other geometry ops that apply to a chart shape: `setElementProperties(id, {x,y,w,h,rot,
+flipH,flipV})`, `reorderElement(id, "front"|"back"|…)`, `deleteElement(id)`.
+
+---
+
+## 8. Legend
+
+**Model:** `legend: boolean` + `legendPos?: "r"|"b"|"t"|"l"` (default `"r"`). Text style via
+`partStyles.legend`.
+
+| | Value |
+|---|---|
+| Set via API | ❌ (not `legend` nor `legendPos`) |
+| Read via API | ✅ `chart.legend` (boolean only — **not** position) |
+| Editor UI | **Chart elements → Add Chart Element → Legend** → None / Right / Bottom / Top / Left |
+| `.pptx` | ✅ `c:legend/c:legendPos` |
+
+**Auto-fit width (no manual sizing needed):** a **left/right** legend column auto-sizes to
+the longest entry (so names like "Series 1" aren't truncated), capped at 45 % of the chart
+width; a **top/bottom** legend shows full names when they fit and truncates only when they
+don't. This is derived from the labels at render time, so it needs no configuration and
+re-fits on reopen.
+
+---
+
+## 9. Data labels
+
+**Model:** `dataLabels?: boolean` + `dataLabelPos?: "outEnd"|"ctr"|"inEnd"`. Text style via
+`partStyles.dataLabels`.
+
+- **Content:** value for category/scatter charts; **percentage** for pie/doughnut.
+- **Position** (`dataLabelPos`) maps per chart type:
+
+| Token | column | bar | line / area / scatter | pie / doughnut |
+|---|---|---|---|---|
+| `outEnd` *(default cartesian)* | above bar | right of bar | above point | outside slice |
+| `ctr` *(default pie)* | bar center | bar center | on the point | slice center |
+| `inEnd` | inside top | inside end | below point | toward outer edge |
+
+| | Value |
+|---|---|
+| Set via API | ❌ |
+| Read via API | ❌ |
+| Editor UI | **Add Chart Element → Data Labels** → show + Outside End / Center / Inside End |
+| `.pptx` | ✅ `c:dLbls` (`c:dLblPos` mapped to the per-type OOXML token; text style as `c:txPr`) |
+
+---
+
+## 10. Series — colors, lines, markers
+
+Per-series fields on `ChartSeries`: `color?`, `lineWidthPt?`, `dash?` (`"solid"|"dash"|
+"dot"`). Plus chart-level `marker?`, `markerSizePt?`, `smooth?`, and `pointColors?`
+(pie/doughnut per-slice).
+
+- **Default colors:** when `series.color` is unset, series cycle through the active theme's
+  **accent1 → accent6** (e.g. Office `accent1` = `#4472C4`), then repeat. Pie/doughnut
+  slices cycle the same accents unless overridden by `pointColors`.
+- **Markers:** `line` and `scatter` show point markers by default (`marker ?? true`);
+  `markerSizePt` defaults to ~5.
+- **Smoothing:** `smooth: true` curves line/scatter. Scatter is tri-state:
+  `smooth: undefined` → markers only (no line), `false` → straight line + markers,
+  `true` → smooth line + markers.
+
+| | Value |
+|---|---|
+| Set via API | ❌ (only series **name + values**) |
+| Read via API | ❌ (color/line/dash not in `ChartInfo`) |
+| Editor UI | series color pickers, **Series lines & markers** panel, per-slice colors |
+| `.pptx` | ✅ series `c:spPr`/`a:ln`, `c:marker`, pie `c:dPt` |
+
+---
+
+## 11. Axes, gridlines & title
+
+**Model:** `axisTitleX?`, `axisTitleY?` (strings); `hideAxisX?`, `hideAxisY?`;
+`gridColor?`, `hideGridlines?`; `errorBarsPct?`; `title?`.
+
+- Pie/doughnut/radar have no cartesian axes (titles/hide/gridlines are ignored).
+- `title` is read via `chart.title` but **not** settable via the API.
+
+| | Value |
+|---|---|
+| Set via API | ❌ |
+| Read via API | only `chart.title` |
+| Editor UI | **Add Chart Element → Axis Titles / Axes / Chart Title / Error Bars**; gridline color & visibility in the chart panel |
+| `.pptx` | ✅ axis `c:title`, `c:delete`, `c:majorGridlines`, `c:errBars` |
+
+---
+
+## 12. Grouping (stacked / 100 %)
+
+**Model:** `grouping?: "clustered"|"stacked"|"percentStacked"` — applies to **column, bar,
+area** (default `clustered`/standard). Multiple series stack instead of clustering;
+`percentStacked` normalizes each category to 100 %.
+
+| | Value |
+|---|---|
+| Set via API | ❌ |
+| Editor UI | **Type & options → Grouping** |
+| `.pptx` | ✅ `c:grouping` + `c:overlap` |
+
+---
+
+## 13. Chart-area & plot-area fill/border
+
+**Model:** `chartFill?`/`chartBorder?` (outer chart area) and `plotFill?`/`plotBorder?`
+(inner plot rectangle). `Fill` supports solid / gradient / image / pattern / none.
+
+| | Value |
+|---|---|
+| Set via API | ❌ |
+| Editor UI | **Chart area & gridlines** panel |
+| `.pptx` | ✅ `c:chartSpace/c:spPr` and `c:plotArea/c:spPr` |
+
+---
+
+## 14. Per-element text formatting
+
+Each chart text element can be styled independently via `partStyles` — keyed by part:
+`"title" | "axisTitleX" | "axisTitleY" | "legend" | "axisLabels" | "dataLabels"`. Each value
+is a `ChartTextStyle`:
+
+```ts
+{ font?: string; sizePt?: number; color?: ColorRef; bold?, italic?, underline?: boolean }
+```
+`labelSizePt` is the **global** label font-size fallback (default 12 pt) that per-part
+styles override.
+
+| | Value |
+|---|---|
+| Set via API | ❌ |
+| Editor UI | select the element (click it, or pick in the **Text elements** row) → format from the **Home tab** |
+| `.pptx` | ✅ each part's `c:txPr` (data labels: `c:txPr` inside `c:dLbls`) |
+
+---
+
+## 15. Known limitations
+
+1. **No type validation** — an invalid `chartType` corrupts the `.pptx`. Guard it:
+   ```js
+   const CHART_TYPES = ["column","bar","line","area","pie","doughnut","scatter","radar"];
+   function insertChartSafe(pe, type, opts = {}) {
+     if (!CHART_TYPES.includes(type)) throw new Error(`invalid chartType "${type}"`);
+     (opts.series ?? []).forEach(s => {
+       if (!Array.isArray(s.values) || s.values.some(v => typeof v !== "number" || Number.isNaN(v)))
+         throw new Error(`series "${s.name ?? "?"}" has non-numeric values`);
+     });
+     return pe.insertChart(type, opts);
+   }
+   ```
+2. **Negative values clamp to zero** in the renderer today — `[-3, 5, -2]` draws the
+   negatives flat on the baseline. Avoid negative data (or offset it) until fixed.
+3. **API covers data only** — title/legend/grouping/colors/data-labels/axes/fonts are
+   editor-UI + `.pptx` only (see [§3](#3-capability-matrix)). A `setChartOptions` extension
+   to expose these (plus the validation guard) is the natural next step.
+
+---
+
+## 16. Source of truth
+
+- `insertChart` / `setChartData` / `describeElement` (→ `ChartInfo`) — [`src/util/api.ts`](../src/util/api.ts)
+- Model (`ChartShape`, `ChartKind`, `ChartSeries`, `ChartTextStyle`, `ChartPart`) — [`src/model/types.ts`](../src/model/types.ts)
+- Defaults (`makeChart`, `CHART_NAMES`, theme accents) — [`src/model/defaults.ts`](../src/model/defaults.ts)
+- Rendering & layout (legend auto-fit, data-label position, axis/legend math) — [`src/render/GraphicViews.tsx`](../src/render/GraphicViews.tsx)
+- `.pptx` read/write (round-trip of every field above) — [`src/ooxml/parse.ts`](../src/ooxml/parse.ts), [`src/ooxml/write.ts`](../src/ooxml/write.ts)
 - `pe:invoke` bridge — [`src/util/embed.ts`](../src/util/embed.ts)

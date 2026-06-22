@@ -40,7 +40,7 @@ Open `http://localhost:5173/embed-test.html` for the iframe-embed demo.
 | 11 | [Testing & verification](docs/11-testing.md) | The smoke round-trip suite and the live-browser verification methodology. |
 | 12 | [Code quality assessment](docs/12-code-quality.md) | An honest review: how the code is structured, what's strong, what's tech debt, and a grade. |
 | 13 | [Scripting API](docs/13-scripting-api.md) | Programmatic read/write surface: `window.presentationEditor` (+ cross-origin `pe:invoke`) to inspect the active slide / selection / element properties and mutate text, images, fills, geometry. |
-| 14 | [Chart authoring](docs/14-chart-authoring.md) | How to insert charts programmatically and the exact `categories`/`series` input shape for each of the 8 chart types (column/bar/line/area/pie/doughnut/scatter/radar), with verified examples + the cross-origin envelope. |
+| 14 | [Charts — complete reference](docs/14-chart-authoring.md) | Everything about charts: the `ChartShape` model, inserting, reading data back (`ChartInfo`), updating, and every styling dimension (legend, data labels, series colors/lines/markers, axes, title, grouping, fills, per-element fonts) — each tagged with set-via-API / editor-UI / round-trips, plus a capability matrix and the cross-origin envelope. |
 
 ---
 
