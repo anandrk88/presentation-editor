@@ -284,7 +284,32 @@ export interface InsertBox { x?: number; y?: number; w?: number; h?: number }
 export interface InsertTextOpts extends InsertBox { text?: string }
 export interface InsertShapeOpts extends InsertBox { fillColor?: string }
 export interface SeriesInput { name?: string; values: number[] }
-export interface InsertChartOpts extends InsertBox { categories?: string[]; series?: SeriesInput[] }
+/** Chart appearance options. Colors are hex strings ("4472C4" / "#4472C4");
+ *  `null` clears a value (back to default/auto); invalid values are ignored. */
+export interface ChartOptions {
+  title?: string | null;                                   // null/"" clears
+  legend?: boolean;                                        // show/hide legend
+  legendPos?: "r" | "b" | "t" | "l";                       // right/bottom/top/left
+  grouping?: "clustered" | "stacked" | "percentStacked";   // column/bar/area
+  dataLabels?: boolean;                                    // value (or % for pie) labels
+  dataLabelPos?: "outEnd" | "ctr" | "inEnd";               // outside / center / inside
+  axisTitleX?: string | null;
+  axisTitleY?: string | null;
+  hideAxisX?: boolean;
+  hideAxisY?: boolean;
+  hideGridlines?: boolean;
+  gridColor?: string | null;                               // hex
+  markers?: boolean;                                       // line/scatter point markers
+  markerSizePt?: number;
+  smooth?: boolean;                                        // line/scatter curve smoothing
+  radarStyle?: "standard" | "marker" | "filled";
+  seriesColors?: (string | null)[];                        // per series; null = auto (accent cycle)
+  sliceColors?: (string | null)[];                         // pie/doughnut per slice; null = auto
+  chartFill?: string | null;                               // chart area: hex | "none" | null(clear)
+  plotFill?: string | null;                                // plot area: hex | "none" | null(clear)
+  labelSizePt?: number;                                    // global label font size
+}
+export interface InsertChartOpts extends InsertBox { categories?: string[]; series?: SeriesInput[]; options?: ChartOptions }
 export interface ChartData { categories?: string[]; series?: SeriesInput[] }
 export interface ParagraphStyle { align?: TextAlign; bullet?: BulletKind; level?: number }
 export interface TextStyle { bold?: boolean; italic?: boolean; underline?: boolean; strike?: boolean; sizePt?: number; font?: string; color?: string }
@@ -297,6 +322,46 @@ function placeBox(o: InsertBox, dw: number, dh: number): { x: number; y: number;
     x: Math.round(o.x ?? (store.pres.slideWidth - w) / 2),
     y: Math.round(o.y ?? (store.pres.slideHeight - h) / 2),
   };
+}
+
+/** The 8 valid chart kinds — used to reject bad input before it can corrupt the .pptx. */
+const CHART_KINDS: readonly ChartKind[] = ["column", "bar", "line", "area", "pie", "doughnut", "scatter", "radar"];
+
+/** Apply ChartOptions onto a chart shape (returns a new shape). Invalid/unknown values are ignored. */
+function applyChartOptions(ch: ChartShape, o: ChartOptions): ChartShape {
+  const next: ChartShape = { ...ch };
+  const ref = (v: string): ColorRef | undefined => { const h = normalizeHex(v); return h ? { kind: "srgb", hex: h } : undefined; };
+  const fillOf = (v: string | null | undefined): Fill | undefined =>
+    v == null ? undefined : v === "none" ? { kind: "none" } : (() => { const c = ref(v); return c ? { kind: "solid", color: c } : undefined; })();
+
+  if ("title" in o) next.title = o.title == null || o.title === "" ? undefined : String(o.title);
+  if (typeof o.legend === "boolean") next.legend = o.legend;
+  if (o.legendPos && ["r", "b", "t", "l"].includes(o.legendPos)) next.legendPos = o.legendPos === "r" ? undefined : o.legendPos;
+  if (o.grouping && ["clustered", "stacked", "percentStacked"].includes(o.grouping)) next.grouping = o.grouping === "clustered" ? undefined : o.grouping;
+  if (typeof o.dataLabels === "boolean") next.dataLabels = o.dataLabels || undefined;
+  if (o.dataLabelPos && ["outEnd", "ctr", "inEnd"].includes(o.dataLabelPos)) next.dataLabelPos = o.dataLabelPos;
+  if ("axisTitleX" in o) next.axisTitleX = o.axisTitleX == null || o.axisTitleX === "" ? undefined : String(o.axisTitleX);
+  if ("axisTitleY" in o) next.axisTitleY = o.axisTitleY == null || o.axisTitleY === "" ? undefined : String(o.axisTitleY);
+  if (typeof o.hideAxisX === "boolean") next.hideAxisX = o.hideAxisX || undefined;
+  if (typeof o.hideAxisY === "boolean") next.hideAxisY = o.hideAxisY || undefined;
+  if (typeof o.hideGridlines === "boolean") next.hideGridlines = o.hideGridlines || undefined;
+  if ("gridColor" in o) next.gridColor = o.gridColor == null ? undefined : ref(o.gridColor);
+  if (typeof o.markers === "boolean") next.marker = o.markers;
+  if (typeof o.markerSizePt === "number" && o.markerSizePt > 0) next.markerSizePt = o.markerSizePt;
+  if (typeof o.smooth === "boolean") next.smooth = o.smooth;
+  if (o.radarStyle && ["standard", "marker", "filled"].includes(o.radarStyle)) next.radarStyle = o.radarStyle;
+  if (typeof o.labelSizePt === "number" && o.labelSizePt > 0) next.labelSizePt = o.labelSizePt;
+  if (Array.isArray(o.seriesColors)) {
+    const sc = o.seriesColors;
+    next.series = next.series.map((se, i) => { if (i >= sc.length) return se; const v = sc[i]; return { ...se, color: v == null ? undefined : ref(v) }; });
+  }
+  if (Array.isArray(o.sliceColors)) {
+    const sc = o.sliceColors;
+    next.pointColors = next.categories.map((_, i) => { const v = i < sc.length ? sc[i] : null; return v == null ? null : (ref(v) ?? null); });
+  }
+  if ("chartFill" in o) next.chartFill = fillOf(o.chartFill);
+  if ("plotFill" in o) next.plotFill = fillOf(o.plotFill);
+  return next;
 }
 
 /**
@@ -382,6 +447,7 @@ export interface PresentationEditorApi {
   // —— write: element content & style ——
   setTableCell(id: string, row: number, col: number, text: string): boolean;
   setChartData(id: string, data: ChartData): boolean;
+  setChartOptions(id: string, options: ChartOptions): boolean;
   setParagraphStyle(id: string, style: ParagraphStyle): boolean;
   setTextStyle(id: string, style: TextStyle): boolean;
   reorderElement(id: string, dir: "front" | "back" | "forward" | "backward"): boolean;
@@ -596,10 +662,13 @@ function buildApi(): PresentationEditorApi {
       return s.id;
     },
     insertChart(chartType, opts = {}) {
+      // hard guard: an invalid kind would serialize an empty plot element and make the .pptx unreadable.
+      if (!CHART_KINDS.includes(chartType)) throw new Error(`insertChart: invalid chartType "${String(chartType)}". Use one of: ${CHART_KINDS.join(", ")}`);
       const b = placeBox(opts, 5_000_000, 3_000_000);
-      const s = makeChart(chartType, b.x, b.y, b.w, b.h);
+      let s = makeChart(chartType, b.x, b.y, b.w, b.h);
       if (opts.categories) s.categories = opts.categories.map(String);
       if (opts.series) s.series = opts.series.map((se, i) => ({ name: String(se.name ?? `Series ${i + 1}`), values: (se.values ?? []).map(Number) }));
+      if (opts.options) s = applyChartOptions(s, opts.options);
       store.addShape(s);
       return s.id;
     },
@@ -636,6 +705,12 @@ function buildApi(): PresentationEditorApi {
         if (data.series) next.series = data.series.map((se, i) => ({ name: String(se.name ?? sh.series[i]?.name ?? `Series ${i + 1}`), values: (se.values ?? []).map(Number), color: sh.series[i]?.color }));
         return next;
       });
+      return true;
+    },
+    setChartOptions(id, options) {
+      const s = findOnActive(id);
+      if (!s || s.kind !== "chart") return false;
+      store.updateShapes([id], sh => (sh.kind === "chart" ? applyChartOptions(sh, options ?? {}) : sh));
       return true;
     },
     setParagraphStyle(id, style) {
@@ -699,7 +774,7 @@ export const API_METHODS = [
   "setText", "setElementProperties", "setFillColor", "setImage", "deleteElement", "undo", "redo",
   "addSlide", "duplicateSlide", "deleteSlide", "moveSlide", "setDocumentTitle", "applyTheme", "setSlideBackgroundColor",
   "insertText", "insertShape", "insertImage", "insertChart", "insertTable",
-  "setTableCell", "setChartData", "setParagraphStyle", "setTextStyle", "reorderElement",
+  "setTableCell", "setChartData", "setChartOptions", "setParagraphStyle", "setTextStyle", "reorderElement",
   "exportSlidePNG", "exportPDF", "exportPNGZip",
 ] as const;
 

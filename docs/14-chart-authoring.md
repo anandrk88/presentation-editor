@@ -16,7 +16,7 @@ API* vs *what is editor-UI only* vs *what round-trips to the `.pptx`*.
 4. [Inserting a chart](#4-inserting-a-chart)
 5. [Per-type input (categories & series)](#5-per-type-input--categories--series)
 6. [Reading chart data back (data access)](#6-reading-chart-data-back-data-access)
-7. [Updating data](#7-updating-data)
+7. [Updating data](#7-updating-data) · [Changing appearance — `setChartOptions`](#75-changing-appearance--setchartoptions)
 8. [Legend](#8-legend)
 9. [Data labels](#9-data-labels)
 10. [Series — colors, lines, markers](#10-series--colors-lines-markers)
@@ -113,9 +113,9 @@ interface ChartShape {
 
 ## 3. Capability matrix
 
-The scripting API is a **thin data layer**. It can **insert** a chart and **read/replace
-its data**, but the rich formatting below is configured in the **editor UI** (and saved
-into the `.pptx`) — it is **not** in the public API yet.
+The API now covers **data** (`insertChart` / `setChartData`) **and most appearance**
+(`setChartOptions` — see [§7.5](#75-changing-appearance--setchartoptions)). A few things
+remain editor-UI only (per-element fonts, chart/plot **border**, per-series line width/dash).
 
 | Aspect | Set via API | Read via API | In editor UI | Round-trips to `.pptx` |
 |---|:--:|:--:|:--:|:--:|
@@ -123,19 +123,22 @@ into the `.pptx`) — it is **not** in the public API yet.
 | **Position / size / rotation** | ✅ `insertChart` opts / `setElementProperties` | ✅ `x,y,w,h,rot…` | ✅ | ✅ |
 | **Categories** | ✅ `insertChart` / `setChartData` | ✅ `chart.categories` | ✅ (Edit Data) | ✅ |
 | **Series** name + values | ✅ `insertChart` / `setChartData` | ✅ `chart.series` | ✅ (Edit Data) | ✅ |
-| **Title** (text) | ❌ | ✅ `chart.title` | ✅ | ✅ |
-| **Legend** on/off | ❌ | ✅ `chart.legend` | ✅ | ✅ |
-| **Legend position** | ❌ | ❌ | ✅ | ✅ |
-| **Data labels** + position | ❌ | ❌ | ✅ | ✅ |
-| **Series colors / line / markers** | ❌ | ❌ | ✅ | ✅ |
-| **Per-slice colors** (pie) | ❌ | ❌ | ✅ | ✅ |
-| **Grouping** (stacked / 100 %) | ❌ | ❌ | ✅ | ✅ |
-| **Axis titles / hide axes / gridlines** | ❌ | ❌ | ✅ | ✅ |
-| **Chart/plot fill & border** | ❌ | ❌ | ✅ | ✅ |
+| **Title** (text) | ✅ `setChartOptions` | ✅ `chart.title` | ✅ | ✅ |
+| **Legend** on/off | ✅ `setChartOptions` | ✅ `chart.legend` | ✅ | ✅ |
+| **Legend position** | ✅ `setChartOptions` | ❌ | ✅ | ✅ |
+| **Data labels** + position | ✅ `setChartOptions` | ❌ | ✅ | ✅ |
+| **Series colors** | ✅ `setChartOptions` | ❌ | ✅ | ✅ |
+| **Per-slice colors** (pie) | ✅ `setChartOptions` | ❌ | ✅ | ✅ |
+| **Markers / smoothing / radar style** | ✅ `setChartOptions` | ❌ | ✅ | ✅ |
+| **Grouping** (stacked / 100 %) | ✅ `setChartOptions` | ❌ | ✅ | ✅ |
+| **Axis titles / hide axes / gridlines** | ✅ `setChartOptions` | ❌ | ✅ | ✅ |
+| **Chart / plot fill** | ✅ `setChartOptions` | ❌ | ✅ | ✅ |
+| Global **label font size** | ✅ `setChartOptions` (`labelSizePt`) | ❌ | ✅ | ✅ |
 | **Per-element fonts** (`partStyles`) | ❌ | ❌ | ✅ | ✅ |
+| Chart/plot **border**, per-series **line width/dash** | ❌ | ❌ | ✅ | ✅ |
 
-> If you need the ❌ rows programmatically, that's a planned API extension
-> (`setChartOptions`) — see [§15](#15-known-limitations).
+> The ❌ "Set via API" rows are read from the model + `.pptx` but not yet projected into
+> the public API — they're the natural next extension.
 
 ---
 
@@ -149,10 +152,12 @@ insertChart(chartType: ChartKind, opts?: {
 }): string                                // returns the new chart's element id
 ```
 
-⚠️ **`chartType` must be one of the 8 valid strings, passed FIRST.** There is no
-validation — an unknown string or an object-as-first-arg silently makes a broken chart
-(`"undefined Chart"`) that **corrupts the `.pptx`** (PowerPoint "repair"). Guard it
-([§15](#15-known-limitations)).
+⚠️ **`chartType` must be one of the 8 valid strings, passed FIRST.** `insertChart` now
+**validates** it and **throws** on an unknown/typo'd type (over the bridge →
+`pe:result { ok:false }`), instead of silently producing a chart that corrupts the
+`.pptx`. An object passed as the first argument throws too. Optionally pass
+`opts.options` (a [`ChartOptions`](#75-changing-appearance--setchartoptions)) to configure
+appearance at insert time.
 
 **Units (EMU):** `pe.EMU_PER_INCH` = 914400, `pe.EMU_PER_PX` = 9525, `pe.EMU_PER_PT` =
 12700. A 16:9 slide is `12192000 × 6858000`.
@@ -285,6 +290,82 @@ flipH,flipV})`, `reorderElement(id, "front"|"back"|…)`, `deleteElement(id)`.
 
 ---
 
+## 7.5 Changing appearance — `setChartOptions`
+
+`setChartOptions(id, options)` → `boolean` sets the chart's **appearance** (legend,
+grouping, data labels, titles, colors, …) on an existing chart. Pass only the keys you
+want to change; **invalid values are ignored**, and **`null` clears** a value back to its
+default/auto. Colors are **hex strings** (`"4472C4"` or `"#4472C4"`). The same `options`
+object can also be passed to `insertChart` as `opts.options` to configure a chart at
+creation time.
+
+```ts
+setChartOptions(id: string, options: ChartOptions): boolean
+
+interface ChartOptions {
+  title?: string | null;                                 // chart title ("" / null clears)
+  legend?: boolean;                                      // show/hide legend
+  legendPos?: "r" | "b" | "t" | "l";                     // right / bottom / top / left
+  grouping?: "clustered" | "stacked" | "percentStacked"; // column / bar / area
+  dataLabels?: boolean;                                  // value (or % for pie) labels
+  dataLabelPos?: "outEnd" | "ctr" | "inEnd";             // outside / center / inside
+  axisTitleX?: string | null;
+  axisTitleY?: string | null;
+  hideAxisX?: boolean;
+  hideAxisY?: boolean;
+  hideGridlines?: boolean;
+  gridColor?: string | null;                             // hex
+  markers?: boolean;                                     // line/scatter point markers
+  markerSizePt?: number;
+  smooth?: boolean;                                      // line/scatter curve smoothing
+  radarStyle?: "standard" | "marker" | "filled";
+  seriesColors?: (string | null)[];                      // per series; null = auto (accent cycle)
+  sliceColors?: (string | null)[];                       // pie/doughnut per slice; null = auto
+  chartFill?: string | null;                             // chart area: hex | "none" | null(clear)
+  plotFill?: string | null;                              // plot area: hex | "none" | null(clear)
+  labelSizePt?: number;                                  // global label font size
+}
+```
+
+**Example — style a column chart in one call:**
+```js
+const id = pe.insertChart("column", {
+  categories: ["Q1","Q2","Q3","Q4"],
+  series: [{ name:"Plan", values:[3,5,4,6] }, { name:"Actual", values:[2,4,6,5] }],
+});
+pe.setChartOptions(id, {
+  title: "Quarterly", legend: true, legendPos: "b",
+  grouping: "stacked", dataLabels: true, dataLabelPos: "inEnd",
+  axisTitleX: "Quarter", axisTitleY: "Units", hideGridlines: true,
+  seriesColors: ["FF0000", "00CC44"], labelSizePt: 14,
+});
+```
+
+**Example — configure at insert time + a pie with custom slice colors:**
+```js
+pe.insertChart("line", {
+  categories: ["Jan","Feb","Mar","Apr"], series: [{ name:"Visits", values:[10,25,45,70] }],
+  options: { legendPos: "b", dataLabels: true, smooth: true, seriesColors: ["7E57C2"] },
+});
+
+const pieId = pe.insertChart("pie", { categories:["A","B","C"], series:[{ name:"S", values:[5,3,2] }] });
+pe.setChartOptions(pieId, { legendPos: "r", dataLabels: true, sliceColors: ["E53935","FB8C00","43A047"] });
+```
+
+**Clearing values:** `setChartOptions(id, { title: null, legendPos: "r", seriesColors: [null, null] })`
+removes the title, returns the legend to the right, and reverts both series to automatic
+(theme-accent) colors.
+
+> Over the postMessage bridge: `invoke("setChartOptions", [id, { legendPos:"b", … }])`.
+
+| | Value |
+|---|---|
+| Set via API | ✅ `setChartOptions` / `insertChart` `opts.options` |
+| Editor UI | the chart panel & Add Chart Element menu |
+| `.pptx` | ✅ every option round-trips |
+
+---
+
 ## 8. Legend
 
 **Model:** `legend: boolean` + `legendPos?: "r"|"b"|"t"|"l"` (default `"r"`). Text style via
@@ -292,7 +373,7 @@ flipH,flipV})`, `reorderElement(id, "front"|"back"|…)`, `deleteElement(id)`.
 
 | | Value |
 |---|---|
-| Set via API | ❌ (not `legend` nor `legendPos`) |
+| Set via API | ✅ `setChartOptions` (`legend`, `legendPos`) |
 | Read via API | ✅ `chart.legend` (boolean only — **not** position) |
 | Editor UI | **Chart elements → Add Chart Element → Legend** → None / Right / Bottom / Top / Left |
 | `.pptx` | ✅ `c:legend/c:legendPos` |
@@ -321,7 +402,7 @@ re-fits on reopen.
 
 | | Value |
 |---|---|
-| Set via API | ❌ |
+| Set via API | ✅ `setChartOptions` (`dataLabels`, `dataLabelPos`) |
 | Read via API | ❌ |
 | Editor UI | **Add Chart Element → Data Labels** → show + Outside End / Center / Inside End |
 | `.pptx` | ✅ `c:dLbls` (`c:dLblPos` mapped to the per-type OOXML token; text style as `c:txPr`) |
@@ -345,7 +426,7 @@ Per-series fields on `ChartSeries`: `color?`, `lineWidthPt?`, `dash?` (`"solid"|
 
 | | Value |
 |---|---|
-| Set via API | ❌ (only series **name + values**) |
+| Set via API | ✅ colors/markers/smoothing via `setChartOptions` (`seriesColors`, `sliceColors`, `markers`, `markerSizePt`, `smooth`, `radarStyle`); name+values via `setChartData`. Per-series line width/dash: editor-UI only |
 | Read via API | ❌ (color/line/dash not in `ChartInfo`) |
 | Editor UI | series color pickers, **Series lines & markers** panel, per-slice colors |
 | `.pptx` | ✅ series `c:spPr`/`a:ln`, `c:marker`, pie `c:dPt` |
@@ -362,7 +443,7 @@ Per-series fields on `ChartSeries`: `color?`, `lineWidthPt?`, `dash?` (`"solid"|
 
 | | Value |
 |---|---|
-| Set via API | ❌ |
+| Set via API | ✅ `setChartOptions` (`title`, `axisTitleX/Y`, `hideAxisX/Y`, `hideGridlines`, `gridColor`) |
 | Read via API | only `chart.title` |
 | Editor UI | **Add Chart Element → Axis Titles / Axes / Chart Title / Error Bars**; gridline color & visibility in the chart panel |
 | `.pptx` | ✅ axis `c:title`, `c:delete`, `c:majorGridlines`, `c:errBars` |
@@ -377,7 +458,7 @@ area** (default `clustered`/standard). Multiple series stack instead of clusteri
 
 | | Value |
 |---|---|
-| Set via API | ❌ |
+| Set via API | ✅ `setChartOptions` (`grouping`) |
 | Editor UI | **Type & options → Grouping** |
 | `.pptx` | ✅ `c:grouping` + `c:overlap` |
 
@@ -390,7 +471,7 @@ area** (default `clustered`/standard). Multiple series stack instead of clusteri
 
 | | Value |
 |---|---|
-| Set via API | ❌ |
+| Set via API | ✅ `setChartOptions` (`chartFill`, `plotFill`); border is editor-UI only |
 | Editor UI | **Chart area & gridlines** panel |
 | `.pptx` | ✅ `c:chartSpace/c:spPr` and `c:plotArea/c:spPr` |
 
@@ -410,7 +491,7 @@ styles override.
 
 | | Value |
 |---|---|
-| Set via API | ❌ |
+| Set via API | global `labelSizePt` via `setChartOptions`; per-part fonts ❌ |
 | Editor UI | select the element (click it, or pick in the **Text elements** row) → format from the **Home tab** |
 | `.pptx` | ✅ each part's `c:txPr` (data labels: `c:txPr` inside `c:dLbls`) |
 
@@ -418,23 +499,16 @@ styles override.
 
 ## 15. Known limitations
 
-1. **No type validation** — an invalid `chartType` corrupts the `.pptx`. Guard it:
-   ```js
-   const CHART_TYPES = ["column","bar","line","area","pie","doughnut","scatter","radar"];
-   function insertChartSafe(pe, type, opts = {}) {
-     if (!CHART_TYPES.includes(type)) throw new Error(`invalid chartType "${type}"`);
-     (opts.series ?? []).forEach(s => {
-       if (!Array.isArray(s.values) || s.values.some(v => typeof v !== "number" || Number.isNaN(v)))
-         throw new Error(`series "${s.name ?? "?"}" has non-numeric values`);
-     });
-     return pe.insertChart(type, opts);
-   }
-   ```
+1. **Pass a valid chart type.** `insertChart` now validates `chartType` and **throws** on
+   an unknown value (and the writer has a column fallback), so a bad type can no longer
+   silently corrupt the `.pptx`. Catch the throw if you forward arbitrary host input.
 2. **Negative values clamp to zero** in the renderer today — `[-3, 5, -2]` draws the
    negatives flat on the baseline. Avoid negative data (or offset it) until fixed.
-3. **API covers data only** — title/legend/grouping/colors/data-labels/axes/fonts are
-   editor-UI + `.pptx` only (see [§3](#3-capability-matrix)). A `setChartOptions` extension
-   to expose these (plus the validation guard) is the natural next step.
+3. **A few options remain editor-UI only:** per-element fonts (`partStyles`), chart/plot
+   **border**, and per-series **line width / dash**. Everything else — title, legend +
+   position, grouping, data labels, series & slice colors, markers/smoothing, axes,
+   gridlines, fills, global label size — is settable via
+   [`setChartOptions`](#75-changing-appearance--setchartoptions).
 
 ---
 

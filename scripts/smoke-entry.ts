@@ -8,7 +8,7 @@ import { isViewerMode, parsePermissions, parseUIConfig, permissions } from "../s
 import { importPatternSlide } from "../src/ooxml/pattern";
 import { makeChart, makeShape, makeSlide, makeTable, makeTextBox, newPresentation } from "../src/model/defaults";
 import { PRESET_NAMES, presetPaths } from "../src/render/presetGeom";
-import type { ChartShape, MediaItem, SpShape, TableShape } from "../src/model/types";
+import type { ChartKind, ChartShape, MediaItem, SpShape, TableShape } from "../src/model/types";
 
 /** 1x1 red PNG */
 const PNG_BYTES = Uint8Array.from(atob(
@@ -940,6 +940,29 @@ export async function runSmoke(patternJson?: string): Promise<{ zipBytes: Uint8A
     ok(editorApi.setTableCell(tblId, 0, 1, "Hi") === true && editorApi.getElement(tblId)?.table?.cells[0][1] === "Hi", "api: setTableCell updates a cell");
 
     ok(editorApi.setChartData(cId, { series: [{ name: "S", values: [9, 9] }] }) === true && editorApi.getElement(cId)?.chart?.series[0].values.join() === "9,9", "api: setChartData replaces values");
+
+    // setChartOptions: legend/grouping/data-labels/titles/colors are settable + round-trip
+    const optId = editorApi.insertChart("column", { categories: ["Q1", "Q2", "Q3"], series: [{ name: "A", values: [3, 5, 4] }, { name: "B", values: [2, 4, 6] }] });
+    ok(editorApi.setChartOptions(optId, {
+      title: "Q Results", legend: true, legendPos: "b", grouping: "stacked",
+      dataLabels: true, dataLabelPos: "inEnd", axisTitleX: "Quarter", axisTitleY: "Revenue",
+      hideGridlines: true, seriesColors: ["FF0000", "00FF00"], labelSizePt: 14,
+    }) === true, "api: setChartOptions returns true");
+    const cm = store.currentSlide!.shapes.find(s => s.id === optId) as ChartShape;
+    ok(cm.title === "Q Results" && cm.legendPos === "b" && cm.grouping === "stacked"
+      && cm.dataLabels === true && cm.dataLabelPos === "inEnd" && cm.axisTitleX === "Quarter" && cm.axisTitleY === "Revenue"
+      && cm.hideGridlines === true && cm.labelSizePt === 14
+      && cm.series[0].color?.kind === "srgb" && (cm.series[0].color as { hex: string }).hex === "FF0000",
+      "api: setChartOptions applies legend/grouping/labels/titles/colors to the model");
+    let badChartThrew = false;
+    try { editorApi.insertChart("nope" as ChartKind, {}); } catch { badChartThrew = true; }
+    ok(badChartThrew, "api: insertChart rejects an invalid chartType (anti-corruption guard)");
+    const reOpt = await parsePptx(await (await buildPptx({ ...newPresentation(), slides: [{ ...makeSlide("blank"), shapes: [cm] }] }, new Map())).generateAsync({ type: "uint8array" }), "chartopts.pptx");
+    const rc = reOpt.pres.slides[0].shapes.find(s => s.kind === "chart") as ChartShape;
+    ok(rc.legendPos === "b" && rc.grouping === "stacked" && rc.dataLabels === true && rc.dataLabelPos === "inEnd"
+      && rc.title === "Q Results" && rc.axisTitleX === "Quarter"
+      && rc.series[0].color?.kind === "srgb" && (rc.series[0].color as { hex: string }).hex === "FF0000",
+      "api: setChartOptions round-trips to .pptx", JSON.stringify({ lp: rc.legendPos, g: rc.grouping, dlp: rc.dataLabelPos }));
 
     editorApi.setTextStyle(tId, { bold: true, sizePt: 40 });
     ok(editorApi.getElement(tId)?.paragraphs?.[0].runs[0].bold === true && editorApi.getElement(tId)?.paragraphs?.[0].runs[0].sizePt === 40, "api: setTextStyle bolds/sizes runs");

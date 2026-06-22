@@ -361,6 +361,11 @@ export function chartSpaceXml(ch: ChartShape): string {
     case "doughnut":
       plot = `<c:doughnutChart><c:varyColors val="1"/>${serXml}${dLbls}<c:firstSliceAng val="0"/><c:holeSize val="50"/></c:doughnutChart>`;
       break;
+    default:
+      // Defensive: an out-of-range chart kind must never serialize an empty <c:plotArea>
+      // (that is "unreadable content" → PowerPoint repair). Fall back to a column chart.
+      plot = `<c:barChart><c:barDir val="col"/><c:grouping val="${grouping}"/><c:varyColors val="0"/>${serXml}${dLbls}<c:gapWidth val="150"/>${overlap}${axIds}</c:barChart>${axes}`;
+      break;
   }
 
   const title = ch.title

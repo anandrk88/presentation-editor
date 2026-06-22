@@ -243,7 +243,7 @@ Each adds to the **active slide**, selects it, and returns the new element id.
 | `insertText(opts?)` | `string` | New text box. `opts.text` seeds the content. |
 | `insertShape(geom, opts?)` | `string` | New preset shape (`geom`: `"rect"`, `"ellipse"`, `"hexagon"`, `"star5"`, …). `opts.fillColor` sets a solid fill. |
 | `insertImage(urlOrDataUrl, opts?)` | `Promise<string>` | New picture from a URL / `data:` URL (CORS applies). Sized to its natural aspect if no box is given. |
-| `insertChart(chartType, opts?)` | `string` | New chart (`chartType`: `"column"`, `"bar"`, `"line"`, `"pie"`, `"doughnut"`, `"area"`, `"scatter"`, `"radar"`). `opts.categories` / `opts.series: [{ name?, values }]` seed the data. **The `categories`/`series` input shape differs per type — see the [Chart authoring guide](14-chart-authoring.md).** ⚠️ `chartType` must be one of those 8 strings; an invalid value silently corrupts the `.pptx`. |
+| `insertChart(chartType, opts?)` | `string` | New chart (`chartType`: `"column"`, `"bar"`, `"line"`, `"pie"`, `"doughnut"`, `"area"`, `"scatter"`, `"radar"`). `opts.categories` / `opts.series: [{ name?, values }]` seed the data; `opts.options` ([`ChartOptions`](14-chart-authoring.md#75-changing-appearance--setchartoptions)) styles it. **Input shape differs per type — see the [Chart reference](14-chart-authoring.md).** Validates `chartType` and **throws** on an invalid value. |
 | `insertTable(rows, cols, opts?)` | `string` | New `rows × cols` table. |
 
 ### Element content & style
@@ -252,6 +252,7 @@ Each adds to the **active slide**, selects it, and returns the new element id.
 |---|---|---|
 | `setTableCell(id, row, col, text)` | `boolean` | Set a cell's text (0-based; `"\n"` splits lines). `false` if out of range or not a table. |
 | `setChartData(id, data)` | `boolean` | Replace a chart's `{ categories?, series? }` (`series: [{ name?, values }]`). |
+| `setChartOptions(id, options)` | `boolean` | Set chart appearance — title, legend + position, grouping, data labels + position, series/slice colors, markers/smoothing, axis titles, gridlines, fills, label size. Colors are hex; `null` clears. See the [Chart reference §7.5](14-chart-authoring.md#75-changing-appearance--setchartoptions). |
 | `setParagraphStyle(id, style)` | `boolean` | Apply to all paragraphs: `{ align?, bullet?, level? }`. |
 | `setTextStyle(id, style)` | `boolean` | Apply to all runs: `{ bold?, italic?, underline?, strike?, sizePt?, font?, color? }` (`color` is a hex). |
 
