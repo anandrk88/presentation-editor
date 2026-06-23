@@ -303,6 +303,7 @@ creation time.
 setChartOptions(id: string, options: ChartOptions): boolean
 
 interface ChartOptions {
+  chartType?: "column"|"bar"|"line"|"area"|"pie"|"doughnut"|"scatter"|"radar"; // change the chart's kind
   title?: string | null;                                 // chart title ("" / null clears)
   legend?: boolean;                                      // show/hide legend
   legendPos?: "r" | "b" | "t" | "l";                     // right / bottom / top / left
@@ -350,6 +351,11 @@ pe.insertChart("line", {
 
 const pieId = pe.insertChart("pie", { categories:["A","B","C"], series:[{ name:"S", values:[5,3,2] }] });
 pe.setChartOptions(pieId, { legendPos: "r", dataLabels: true, sliceColors: ["E53935","FB8C00","43A047"] });
+```
+
+**Change a chart's type** (same as the editor's Chart-type dropdown — keeps the data):
+```js
+pe.setChartOptions(id, { chartType: "line" });   // e.g. column → line
 ```
 
 **Clearing values:** `setChartOptions(id, { title: null, legendPos: "r", seriesColors: [null, null] })`

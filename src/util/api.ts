@@ -287,6 +287,7 @@ export interface SeriesInput { name?: string; values: number[] }
 /** Chart appearance options. Colors are hex strings ("4472C4" / "#4472C4");
  *  `null` clears a value (back to default/auto); invalid values are ignored. */
 export interface ChartOptions {
+  chartType?: ChartKind;                                   // change the chart's kind (column/bar/line/…)
   title?: string | null;                                   // null/"" clears
   legend?: boolean;                                        // show/hide legend
   legendPos?: "r" | "b" | "t" | "l";                       // right/bottom/top/left
@@ -334,6 +335,7 @@ function applyChartOptions(ch: ChartShape, o: ChartOptions): ChartShape {
   const fillOf = (v: string | null | undefined): Fill | undefined =>
     v == null ? undefined : v === "none" ? { kind: "none" } : (() => { const c = ref(v); return c ? { kind: "solid", color: c } : undefined; })();
 
+  if (o.chartType && CHART_KINDS.includes(o.chartType)) next.chart = o.chartType;   // mirror the Chart-type dropdown
   if ("title" in o) next.title = o.title == null || o.title === "" ? undefined : String(o.title);
   if (typeof o.legend === "boolean") next.legend = o.legend;
   if (o.legendPos && ["r", "b", "t", "l"].includes(o.legendPos)) next.legendPos = o.legendPos === "r" ? undefined : o.legendPos;
