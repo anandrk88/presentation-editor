@@ -986,6 +986,33 @@ export async function runSmoke(patternJson?: string): Promise<{ zipBytes: Uint8A
     ok(editorApi.getDocument().slideCount === cnt, "api: deleteSlide");
   }
 
+  // ---------- font embedding (opt-in; default off so saved docs stay lean) ----------
+  {
+    const fp = { ...newPresentation(), slides: [{ ...makeSlide("blank"), shapes: [makeTextBox(914400, 914400, 3000000, 800000, "Hi")] }] };
+
+    // default: no embedding, output unchanged
+    const zipNo = await buildPptx(fp, new Map());
+    const presNo = await zipNo.file("ppt/presentation.xml")!.async("text");
+    ok(!presNo.includes("embeddedFontLst") && presNo.includes(`saveSubsetFonts="1"`), "fonts: no embedding by default");
+    ok(zipNo.file("ppt/fonts/font1.fntdata") === null, "fonts: no fntdata part by default");
+
+    // opt-in: embed two faces of one typeface
+    const bytesR = new Uint8Array([0x00, 0x01, 0x00, 0x00, 9, 9]);
+    const bytesB = new Uint8Array([0x00, 0x01, 0x00, 0x00, 7, 7]);
+    const zipF = await buildPptx(fp, new Map(), { fonts: [{ typeface: "Montserrat SemiBold", regular: bytesR, bold: bytesB }] });
+    const presF = await zipF.file("ppt/presentation.xml")!.async("text");
+    ok(presF.includes(`embedTrueTypeFonts="1"`) && presF.includes(`saveSubsetFonts="0"`), "fonts: embedTrueTypeFonts set when embedding");
+    ok(presF.includes(`<p:embeddedFontLst><p:embeddedFont><p:font typeface="Montserrat SemiBold"/>`), "fonts: embeddedFontLst carries the typeface");
+    ok(/<p:regular r:id="rId\d+"\/><p:bold r:id="rId\d+"\/>/.test(presF), "fonts: regular + bold slots reference rels");
+    const ct = await zipF.file("[Content_Types].xml")!.async("text");
+    ok(ct.includes(`Extension="fntdata" ContentType="application/x-fontdata"`), "fonts: fntdata content-type declared");
+    const relsF = await zipF.file("ppt/_rels/presentation.xml.rels")!.async("text");
+    ok((relsF.match(/relationships\/font/g) || []).length === 2, "fonts: two font relationships written");
+    const f1 = await zipF.file("ppt/fonts/font1.fntdata")!.async("uint8array");
+    const f2 = await zipF.file("ppt/fonts/font2.fntdata")!.async("uint8array");
+    ok(f1.length === bytesR.length && f1[4] === 9 && f2[4] === 7, "fonts: fntdata parts carry the exact font bytes");
+  }
+
   // ---------- host UI config (feature flags) ----------
   {
     const def = parseUIConfig(undefined, "");

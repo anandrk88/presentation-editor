@@ -372,7 +372,7 @@ function applyChartOptions(ch: ChartShape, o: ChartOptions): ChartShape {
  * bridge turns the throw into pe:result { ok:false, error }. The permission is
  * read from a module-scoped value the page console can't reach.
  */
-async function assertExportAllowed(format: "pdf" | "png" | "zip"): Promise<void> {
+async function assertExportAllowed(format: "pdf" | "png" | "zip" | "pptx"): Promise<void> {
   if (!permissions.export) throw new Error("export disabled");
   if (exportAuthUrl) {
     let res: Response;
@@ -458,6 +458,7 @@ export interface PresentationEditorApi {
   exportSlidePNG(index?: number, opts?: { scale?: number }): Promise<Blob>;   // default: active slide
   exportPDF(opts?: { scale?: number }): Promise<Blob>;                        // whole deck, one slide per page
   exportPNGZip(opts?: { scale?: number }): Promise<Blob>;                     // every slide as a PNG, zipped
+  exportPPTX(opts?: { embedFonts?: boolean }): Promise<Blob>;                 // .pptx download; embeds used bundled fonts by default
 
   // —— events ——
   on(event: ApiEvent, handler: (payload: unknown) => void): () => void;
@@ -757,6 +758,15 @@ function buildApi(): PresentationEditorApi {
       const { exportPngZipBlob } = await import("./export");
       return exportPngZipBlob(store.pres, store.media, opts);
     },
+    async exportPPTX(opts) {
+      await assertExportAllowed("pptx");
+      const { exportPptxBlob } = await import("../ooxml/write");
+      // embed used bundled fonts by default; the lean save path (pe:save) never calls this
+      if (opts?.embedFonts === false) return exportPptxBlob(store.pres, store.media);
+      const { gatherEmbeddedFonts } = await import("./fontEmbed");
+      const fonts = await gatherEmbeddedFonts(store.pres);
+      return exportPptxBlob(store.pres, store.media, { fonts });
+    },
 
     on(event, handler) {
       listeners[event].add(handler);
@@ -777,7 +787,7 @@ export const API_METHODS = [
   "addSlide", "duplicateSlide", "deleteSlide", "moveSlide", "setDocumentTitle", "applyTheme", "setSlideBackgroundColor",
   "insertText", "insertShape", "insertImage", "insertChart", "insertTable",
   "setTableCell", "setChartData", "setChartOptions", "setParagraphStyle", "setTextStyle", "reorderElement",
-  "exportSlidePNG", "exportPDF", "exportPNGZip",
+  "exportSlidePNG", "exportPDF", "exportPNGZip", "exportPPTX",
 ] as const;
 
 /** Install the API as a global so same-origin hosts can reach it. */

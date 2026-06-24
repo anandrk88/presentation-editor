@@ -553,7 +553,16 @@ function mimeExt(mime: string): string {
   return "png";
 }
 
-export async function buildPptx(pres: Presentation, media: Map<string, MediaItem>): Promise<JSZip> {
+/** A font face to embed in the .pptx — raw TTF/OTF bytes, one per style slot. */
+export interface EmbeddedFont {
+  typeface: string;            // must match the <a:latin typeface> written on runs
+  regular?: Uint8Array;
+  bold?: Uint8Array;
+  italic?: Uint8Array;
+  boldItalic?: Uint8Array;
+}
+
+export async function buildPptx(pres: Presentation, media: Map<string, MediaItem>, opts: { fonts?: EmbeddedFont[] } = {}): Promise<JSZip> {
   const zip = new JSZip();
   const slideCount = pres.slides.length;
 
@@ -605,6 +614,30 @@ export async function buildPptx(pres: Presentation, media: Map<string, MediaItem
   const notesCount = pres.slides.filter(s => s.notes?.trim()).length;
   const anyNotes = notesCount > 0;
 
+  // ---- embedded fonts (opt-in): one /ppt/fonts/fontN.fntdata part per style slot ----
+  const fontFiles: { file: string; bytes: Uint8Array }[] = [];
+  const fontRels: { id: string; type: string; target: string }[] = [];
+  let embeddedFontLst = "";
+  if (opts.fonts?.length) {
+    let k = 1;
+    // first free rId after master + slides + presProps/viewProps/theme/tableStyles (+ notesMaster)
+    let relN = 6 + slideCount + (anyNotes ? 1 : 0);
+    const entries: string[] = [];
+    for (const f of opts.fonts) {
+      const slot = (tag: string, bytes?: Uint8Array) => {
+        if (!bytes || !bytes.length) return "";
+        const file = `font${k++}.fntdata`;
+        const id = `rId${relN++}`;
+        fontFiles.push({ file, bytes });
+        fontRels.push({ id, type: `${RT}/font`, target: `fonts/${file}` });
+        return `<p:${tag} r:id="${id}"/>`;
+      };
+      const slots = slot("regular", f.regular) + slot("bold", f.bold) + slot("italic", f.italic) + slot("boldItalic", f.boldItalic);
+      if (slots) entries.push(`<p:embeddedFont><p:font typeface="${esc(f.typeface)}"/>${slots}</p:embeddedFont>`);
+    }
+    if (entries.length) embeddedFontLst = `<p:embeddedFontLst>${entries.join("")}</p:embeddedFontLst>`;
+  }
+
   // ---- [Content_Types].xml ----
   const overrides: string[] = [
     `<Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>`,
@@ -639,6 +672,7 @@ export async function buildPptx(pres: Presentation, media: Map<string, MediaItem
     `<Default Extension="jpg" ContentType="image/jpeg"/>` +
     `<Default Extension="gif" ContentType="image/gif"/>` +
     `<Default Extension="svg" ContentType="image/svg+xml"/>` +
+    (fontFiles.length ? `<Default Extension="fntdata" ContentType="application/x-fontdata"/>` : "") +
     overrides.join("") + `</Types>`);
 
   // ---- package rels ----
@@ -663,11 +697,12 @@ export async function buildPptx(pres: Presentation, media: Map<string, MediaItem
   const sldIds = pres.slides.map((_, i) =>
     `<p:sldId id="${256 + i}" r:id="rId${2 + i}"/>`).join("");
   zip.file("ppt/presentation.xml", XML_DECL +
-    `<p:presentation xmlns:a="${NS_A}" xmlns:r="${NS_R}" xmlns:p="${NS_P}" saveSubsetFonts="1">` +
+    `<p:presentation xmlns:a="${NS_A}" xmlns:r="${NS_R}" xmlns:p="${NS_P}" ${embeddedFontLst ? `embedTrueTypeFonts="1" saveSubsetFonts="0"` : `saveSubsetFonts="1"`}>` +
     `<p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId1"/></p:sldMasterIdLst>` +
     (hasNotes ? `<p:notesMasterIdLst><p:notesMasterId r:id="rId${6 + slideCount}"/></p:notesMasterIdLst>` : "") +
     `<p:sldIdLst>${sldIds}</p:sldIdLst>` +
     `<p:sldSz cx="${pres.slideWidth}" cy="${pres.slideHeight}"/><p:notesSz cx="6858000" cy="9144000"/>` +
+    embeddedFontLst +
     `</p:presentation>`);
 
   const presRels = [
@@ -678,8 +713,10 @@ export async function buildPptx(pres: Presentation, media: Map<string, MediaItem
     { id: `rId${4 + slideCount}`, type: `${RT}/theme`, target: "theme/theme1.xml" },
     { id: `rId${5 + slideCount}`, type: `${RT}/tableStyles`, target: "tableStyles.xml" },
     ...(hasNotes ? [{ id: `rId${6 + slideCount}`, type: `${RT}/notesMaster`, target: "notesMasters/notesMaster1.xml" }] : []),
+    ...fontRels,
   ];
   zip.file("ppt/_rels/presentation.xml.rels", rels(presRels));
+  for (const ff of fontFiles) zip.file(`ppt/fonts/${ff.file}`, ff.bytes);
 
   // ---- static props parts ----
   zip.file("ppt/presProps.xml", XML_DECL + `<p:presentationPr xmlns:a="${NS_A}" xmlns:r="${NS_R}" xmlns:p="${NS_P}"/>`);
@@ -798,7 +835,7 @@ export async function buildPptx(pres: Presentation, media: Map<string, MediaItem
   return zip;
 }
 
-export async function exportPptxBlob(pres: Presentation, media: Map<string, MediaItem>): Promise<Blob> {
-  const zip = await buildPptx(pres, media);
+export async function exportPptxBlob(pres: Presentation, media: Map<string, MediaItem>, opts: { fonts?: EmbeddedFont[] } = {}): Promise<Blob> {
+  const zip = await buildPptx(pres, media, opts);
   return zip.generateAsync({ type: "blob", compression: "DEFLATE", mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation" });
 }

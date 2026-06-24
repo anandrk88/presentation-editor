@@ -258,16 +258,26 @@ Each adds to the **active slide**, selects it, and returns the new element id.
 
 ---
 
-## Export — PDF & PNG
+## Export — PowerPoint, PDF & PNG
 
-Render slides to images entirely in the browser. Each returns a `Blob` (the
-renderer and jsPDF load on demand, so they never weigh down the main bundle).
+Produce a downloadable `Blob` entirely in the browser (the renderer, jsPDF, and the
+font loader load on demand, so they never weigh down the main bundle).
 
 | Method | Returns | Output |
 |---|---|---|
+| `exportPPTX(opts?)` | `Promise<Blob>` | The deck as a `.pptx`. **Embeds the used bundled fonts by default** (`opts.embedFonts`, default `true`) so it renders correctly on machines without them installed. |
 | `exportSlidePNG(index?, opts?)` | `Promise<Blob>` | One slide as a PNG (default: the active slide). |
 | `exportPDF(opts?)` | `Promise<Blob>` | The whole deck as a multi-page PDF, one slide per page. |
 | `exportPNGZip(opts?)` | `Promise<Blob>` | Every slide as a PNG, bundled into one `.zip`. |
+
+**`exportPPTX` vs saving.** `exportPPTX` is the *portable* export — it embeds fonts, so
+the file is larger but looks identical everywhere. The **save** paths (`pe:save` → your
+storage, and the editor's *Download as… .pptx*) stay **lean — no embedded fonts** — so
+stored documents don't carry font bytes (the editor re-renders them from its own
+self-hosted fonts anyway). Only fonts the editor *bundles* are embedded; system fonts
+(Arial, Calibri…) and license-restricted faces are skipped. PNG/PDF are rasterized, so
+fonts are baked into pixels — nothing to embed. *(Embedding is best-supported by desktop
+PowerPoint on Windows; other apps fall back to substitution.)*
 
 `opts.scale` (default `2`) is device-px per slide-px — raise it for print-grade
 output, lower it for smaller files. (A 13.3″ 16:9 slide is 1280×720 slide-px, so
@@ -289,7 +299,7 @@ Object.assign(document.createElement("a"), { href: url, download: "deck.pdf" }).
 const pdf = await call("exportPDF");          // a Blob
 ```
 
-The editor's own **File → Export as PDF / PNG** menu items call these.
+The editor's own **File → Export for PowerPoint / Export as PDF / PNG** menu items call these.
 
 > **Font note.** Text is rasterized with whatever font the browser has for each
 > family. System/common families render exactly; an exotic bundled family the

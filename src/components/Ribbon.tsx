@@ -1010,13 +1010,14 @@ function ChartIcon() {
  * export permission (and any exportAuthUrl hook) gates the UI the same as a
  * programmatic call — one chokepoint for every path.
  */
-async function runExport(kind: "pdf" | "png" | "pngzip", onClose: () => void) {
+async function runExport(kind: "pdf" | "png" | "pngzip" | "pptx", onClose: () => void) {
   onClose();
   try {
-    store.setStatus("Exporting…");
+    store.setStatus(kind === "pptx" ? "Embedding fonts…" : "Exporting…");
     const base = (store.pres.title || "Presentation").replace(/[^\w.-]+/g, "_") || "Presentation";
     let blob: Blob, name: string;
-    if (kind === "pdf") { blob = await editorApi.exportPDF(); name = `${base}.pdf`; }
+    if (kind === "pptx") { blob = await editorApi.exportPPTX(); name = `${base}.pptx`; }
+    else if (kind === "pdf") { blob = await editorApi.exportPDF(); name = `${base}.pdf`; }
     else if (kind === "pngzip") { blob = await editorApi.exportPNGZip(); name = `${base}-slides.zip`; }
     else { const i = store.getState().selection.slideIndex; blob = await editorApi.exportSlidePNG(i); name = `${base}-slide-${i + 1}.png`; }
     const { downloadBlob } = await import("../util/export");
@@ -1040,6 +1041,9 @@ function FileMenu({ onClose, onOpenFile, onSave, onImportPattern }: { onClose: (
             </button>
           )}
           {uiConfig.export && permissions.export && <>
+            <button className="file-item" onClick={() => runExport("pptx", onClose)}>
+              <Icon name="save" size={18} /> Export for PowerPoint <span className="file-hint">.pptx · fonts embedded</span>
+            </button>
             <button className="file-item" onClick={() => runExport("pdf", onClose)}>
               <Icon name="doc" size={18} /> Export as PDF <span className="file-hint">.pdf</span>
             </button>
